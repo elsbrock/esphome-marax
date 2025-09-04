@@ -1,0 +1,38 @@
+# Sensors for Mara X temperature data
+sensor:
+  - platform: template
+    id: steam_temp
+    name: "Steam Temperature"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+
+  - platform: template
+    id: service_temp
+    name: "Service Temperature"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+
+  - platform: template
+    id: hx_temp
+    name: "HX Temperature"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+
+# Text sensors
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: wifi_ip
+
+  - platform: template
+    id: mara_raw_data
+    name: "Mara X Raw Data"
+
+  - platform: template
+    id: mara_status
+    name: "Mara X Status"
+
+  - platform: template
+    id: mara_version
+    name: "Mara X Version"

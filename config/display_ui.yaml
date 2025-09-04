@@ -1,0 +1,177 @@
+# LVGL Configuration
+lvgl:
+  displays:
+    - main_display
+  touchscreens:
+    - main_touchscreen
+
+  style_definitions:
+    - id: style_screen
+      bg_color: 0x000000
+
+  pages:
+    - id: main_page
+      bg_color: 0x000000  # Pure black background
+      widgets:
+        # Top labels (no header bar)
+        - label:
+            align: TOP_LEFT
+            x: 10
+            y: 5
+            text: "\U000F02E3 Mara X"
+            text_font: header_font
+            text_color: 0x888888
+        - label:
+            id: machine_status
+            align: TOP_MID
+            y: 5
+            text: "NO DATA"
+            text_font: default_font
+            text_color: 0xFF5722
+        - label:
+            id: wifi_status
+            align: TOP_RIGHT
+            x: -10
+            y: 5
+            text: "\U000F05A9"
+            text_font: header_font
+            text_color: 0x888888
+
+        # Left column (1/4) - Timer and temperatures
+        - obj:
+            id: left_panel
+            x: 10
+            y: 42  # Moved down 7px (half of previous 15px)
+            width: 115  # ~1/4 of 480px minus padding
+            height: 238  # Adjusted height
+            bg_color: 0x000000
+            border_width: 0
+            pad_all: 0
+            widgets:
+              # Timer (prominent at top)
+              - label:
+                  align: TOP_LEFT
+                  x: 0
+                  y: 0
+                  text: "TIMER"
+                  text_font: small_font
+                  text_color: 0x888888
+              - label:
+                  id: brew_timer
+                  align: TOP_LEFT
+                  x: 0
+                  y: 15
+                  text: "00:00"
+                  text_font: temp_font
+                  text_color: 0x00FF00
+
+              # Steam temp
+              - label:
+                  align: TOP_LEFT
+                  x: 0
+                  y: 70
+                  text: "STEAM"
+                  text_font: small_font
+                  text_color: 0x888888
+              - label:
+                  id: steam_temp_display
+                  align: TOP_LEFT
+                  x: 0
+                  y: 85
+                  text: "--°C"
+                  text_font: header_font
+                  text_color: 0x555555
+
+              # Target temp
+              - label:
+                  align: TOP_LEFT
+                  x: 0
+                  y: 120
+                  text: "TARGET"
+                  text_font: small_font
+                  text_color: 0x888888
+              - label:
+                  id: target_temp_display
+                  align: TOP_LEFT
+                  x: 0
+                  y: 135
+                  text: "--°C"
+                  text_font: header_font
+                  text_color: 0x555555
+
+              # HX/Brew temp
+              - label:
+                  align: TOP_LEFT
+                  x: 0
+                  y: 170
+                  text: "BREW"
+                  text_font: small_font
+                  text_color: 0x888888
+              - label:
+                  id: hx_temp_display
+                  align: TOP_LEFT
+                  x: 0
+                  y: 185
+                  text: "--°C"
+                  text_font: header_font
+                  text_color: 0x555555
+
+              # Version info
+              - label:
+                  id: version_display
+                  align: TOP_LEFT
+                  x: 0
+                  y: 220
+                  text: "--"
+                  text_font: small_font
+                  text_color: 0x555555
+
+        # Right column (3/4) - Temperature Chart
+        - obj:
+            id: graph_area
+            x: 125  # 10px further left
+            y: 35
+            width: 345  # 10px wider
+            height: 260  # 15px taller
+            bg_color: 0x000000
+            border_width: 0  # Remove border since chart has its own
+            pad_all: 0
+            scrollbar_mode: "OFF"  # Disable parent container scrollbar
+            widgets:
+              - label:
+                  text: !lambda |-
+                    create_temp_chart(id(graph_area));
+                    return "";
+
+        # Bottom status indicators - span full width
+        - obj:
+            id: status_indicators
+            x: 10
+            y: 290
+            width: 460
+            height: 25
+            bg_color: 0x000000
+            border_width: 0
+            pad_all: 0
+            widgets:
+              - label:
+                  id: heating_status
+                  align: LEFT_MID
+                  x: 0
+                  text: "\U000F1A45 HEAT"
+                  text_font: small_font
+                  text_color: 0x333333
+              - label:
+                  id: pump_status
+                  align: LEFT_MID
+                  x: 100
+                  text: "\U000F1B22 PUMP"
+                  text_font: small_font
+                  text_color: 0x333333
+              - label:
+                  id: uart_status
+                  align: RIGHT_MID
+                  x: 0
+                  text: "\U000F065C UART"
+                  text_font: small_font
+                  text_color: 0xFF5722
