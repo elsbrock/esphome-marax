@@ -21,7 +21,10 @@ font:
       - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf"
         glyphs: [
           "\U000F05A9", # mdi-wifi
-          "\U000F02E3"  # mdi-coffee
+          "\U000F16B5", # mdi-wifi-alert
+          "\U000F0176", # mdi-coffee-maker
+          "\U000F04A2", # mdi-signal
+          "\U000F08BF"  # mdi-signal-off
         ]
   - file: "gfonts://Roboto@700"
     id: temp_font
@@ -31,3 +34,12 @@ font:
     id: small_font
     size: 12
     bpp: 4
+    extras:
+      - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf"
+        glyphs: [
+          "\U000F1A45", # mdi-heat-wave
+          "\U000F1B22", # mdi-pump-off
+          "\U000F1402", # mdi-pump
+          "\U000F065C", # mdi-uart
+          "\U000F0140"  # mdi-arrow-right
+        ]
