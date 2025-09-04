@@ -17,17 +17,48 @@ lvgl:
         - label:
             align: TOP_LEFT
             x: 10
-            y: 5
-            text: "\U000F02E3 Mara X"
+            y: 8
+            text: "\U000F0176 Mara X Monitor"
             text_font: header_font
             text_color: 0x888888
         - label:
             id: machine_status
             align: TOP_MID
-            y: 5
+            y: 8
             text: "NO DATA"
             text_font: default_font
             text_color: 0xFF5722
+        - label:
+            id: time_display
+            align: TOP_RIGHT
+            x: -60
+            y: 5
+            text: "--:--"
+            text_font: header_font
+            text_color: 0x888888
+        - label:
+            id: uart_status
+            align: TOP_RIGHT
+            x: -35
+            y: 5
+            text: "\U000F04A2"
+            text_font: header_font
+            text_color: 0xFF9800
+        # Tappable area over UART icon for demo mode toggle
+        - obj:
+            x: 430  # Absolute position covering right side
+            y: 0
+            width: 50
+            height: 40
+            bg_opa: 0  # Transparent
+            border_opa: 0  # No border
+            on_click:
+              - globals.set:
+                  id: demo_mode_enabled
+                  value: !lambda "return !id(demo_mode_enabled);"
+              - logger.log:
+                  format: "Demo mode toggled: %s"
+                  args: ['id(demo_mode_enabled) ? "ON" : "OFF"']
         - label:
             id: wifi_status
             align: TOP_RIGHT
@@ -35,25 +66,28 @@ lvgl:
             y: 5
             text: "\U000F05A9"
             text_font: header_font
-            text_color: 0x888888
+            text_color: 0xFF9800
 
         # Left column (1/4) - Timer and temperatures
         - obj:
             id: left_panel
             x: 10
             y: 42  # Moved down 7px (half of previous 15px)
-            width: 115  # ~1/4 of 480px minus padding
-            height: 238  # Adjusted height
+            width: 135  # Expanded from 115 to 135 pixels
+            height: 270  # Expanded from 238 to 270 pixels
             bg_color: 0x000000
             border_width: 0
             pad_all: 0
+            scrollable: false
+            scroll_chain: false
+            click_focusable: false
             widgets:
               # Timer (prominent at top)
               - label:
                   align: TOP_LEFT
                   x: 0
                   y: 0
-                  text: "TIMER"
+                  text: "SHOT TIMER"
                   text_font: small_font
                   text_color: 0x888888
               - label:
@@ -126,13 +160,31 @@ lvgl:
                   text_font: small_font
                   text_color: 0x555555
 
+              # Heat and Pump status
+              - label:
+                  id: heating_status
+                  align: TOP_LEFT
+                  x: 0
+                  y: 255
+                  text: "\U000F1A45 HEAT"
+                  text_font: small_font
+                  text_color: 0x333333
+              - label:
+                  id: pump_status
+                  align: TOP_LEFT
+                  x: 55
+                  y: 255
+                  text: "\U000F1B22 PUMP"
+                  text_font: small_font
+                  text_color: 0x333333
+
         # Right column (3/4) - Temperature Chart
         - obj:
             id: graph_area
-            x: 125  # 10px further left
+            x: 155  # Adjusted for wider left panel (was 125)
             y: 35
-            width: 345  # 10px wider
-            height: 260  # 15px taller
+            width: 315  # Adjusted for wider left panel (was 345)
+            height: 285  # Expanded to bottom (was 260)
             bg_color: 0x000000
             border_width: 0  # Remove border since chart has its own
             pad_all: 0
@@ -145,35 +197,3 @@ lvgl:
                     create_temp_chart(id(graph_area));
                     return "";
 
-        # Bottom status indicators - span full width
-        - obj:
-            id: status_indicators
-            x: 10
-            y: 290
-            width: 460
-            height: 25
-            bg_color: 0x000000
-            border_width: 0
-            pad_all: 0
-            widgets:
-              - label:
-                  id: heating_status
-                  align: LEFT_MID
-                  x: 0
-                  text: "\U000F1A45 HEAT"
-                  text_font: small_font
-                  text_color: 0x333333
-              - label:
-                  id: pump_status
-                  align: LEFT_MID
-                  x: 100
-                  text: "\U000F1B22 PUMP"
-                  text_font: small_font
-                  text_color: 0x333333
-              - label:
-                  id: uart_status
-                  align: RIGHT_MID
-                  x: 0
-                  text: "\U000F065C UART"
-                  text_font: small_font
-                  text_color: 0xFF5722
