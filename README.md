@@ -34,6 +34,17 @@ A professional temperature monitoring display for the Lelit Mara X espresso mach
 
 ## Quick Start
 
+### Option 1: Pre-built Firmware (Recommended)
+
+1. **Download firmware** from the [latest release](https://github.com/elsbrock/esphome-marax/releases)
+2. **Flash using web installer** (Chrome/Edge required):
+   - Connect ESP32 via USB
+   - Open the [Web Flasher](https://elsbrock.github.io/esphome-marax/)
+   - Click "Install" and select your device
+3. **Configure WiFi** via the captive portal that appears on first boot
+
+### Option 2: Build from Source
+
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/elsbrock/esphome-marax.git
