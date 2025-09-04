@@ -1,6 +1,6 @@
 esphome:
-  name: marax-display
-  friendly_name: "Mara X Display"
+  name: jc3248w535-marax
+  friendly_name: "jc3248w535 Mara X Display"
   platformio_options:
     build_flags:
       - -D LV_USE_CHART=1
@@ -38,7 +38,7 @@ captive_portal:
 # UART for Mara X communication
 uart:
   id: marax_uart
-  tx_pin: 
+  tx_pin:
     number: GPIO43
     inverted: true  # Mara X uses inverted serial logic
   rx_pin:
