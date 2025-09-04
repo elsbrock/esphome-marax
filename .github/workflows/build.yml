@@ -32,7 +32,7 @@ jobs:
           wifi_password: "dummy_password_123"
           api_encryption_key: "dummy_32_character_api_key_1234567"
           ota_password: "dummy_ota_password"
-          ap_password: "dummy_ap_password"
+          ap_password: "12345678"
           EOF
 
       - name: Build ESPHome firmware
