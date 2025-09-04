@@ -132,9 +132,45 @@ interval:
             - lvgl.label.update:
                 id: uart_status  
                 text_color: 0xFF9800  # Orange for no data
-      # Generate demo data when enabled
+      # Generate demo data when enabled with dynamic resolution
       - lambda: |-
-          generate_test_data(false);  // Always call with false for UART connection status
+          // Always call generate_test_data - it handles timing internally
+          generate_test_data(false);
+  # Timer update interval (100ms for smooth timer)
+  - interval: 100ms
+    then:
+      - if:
+          condition:
+            lambda: 'return id(demo_mode_enabled);'
+          then:
+            - lvgl.label.update:
+                id: brew_timer
+                text: !lambda |-
+                  static uint32_t timer_start = 0;
+                  static bool timer_running = false;
+                  uint32_t now = millis();
+                  
+                  // Start timer when demo mode is enabled
+                  if (!timer_running) {
+                      timer_start = now;
+                      timer_running = true;
+                  }
+                  
+                  uint32_t elapsed_ms = now - timer_start;
+                  int minutes = elapsed_ms / 60000;
+                  int seconds = (elapsed_ms % 60000) / 1000;
+                  int deciseconds = (elapsed_ms % 1000) / 100;
+                  return str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds).c_str();
+                text_color: 0x00FF00  # Green when running
+          else:
+            - lvgl.label.update:
+                id: brew_timer
+                text: "00:00.0"
+                text_color: 0x555555  # Gray when stopped
+            - lambda: |-
+                // Reset timer state when demo mode is disabled
+                static bool timer_running = false;
+                timer_running = false;
 
 # Include component configurations
 <<: !include config/display_ui.yaml
