@@ -3,6 +3,9 @@ globals:
   - id: demo_mode_enabled
     type: bool
     initial_value: 'false'
+  - id: high_res_chart
+    type: bool
+    initial_value: 'false'  # false = 5s resolution, true = 1s resolution
 
 # Sensors for Mara X temperature data
 sensor:
