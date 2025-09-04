@@ -17,7 +17,7 @@ lvgl:
         - label:
             align: TOP_LEFT
             x: 10
-            y: 8
+            y: 5
             text: "\U000F0176 Mara X Monitor"
             text_font: header_font
             text_color: 0x888888
@@ -44,12 +44,12 @@ lvgl:
             text: "\U000F04A2"
             text_font: header_font
             text_color: 0xFF9800
-        # Tappable area over UART icon for demo mode toggle
+        # Tappable area over UART icon for demo mode toggle  
         - obj:
-            x: 430  # Absolute position covering right side
-            y: 0
-            width: 50
-            height: 40
+            x: 470  # Closer to right edge where touches occur
+            y: 100  # Cover y=113-180 area from logs
+            width: 10   # Narrow strip at very right edge
+            height: 80  # Cover the touch range
             bg_opa: 0  # Transparent
             border_opa: 0  # No border
             on_click:
@@ -59,6 +59,46 @@ lvgl:
               - logger.log:
                   format: "Demo mode toggled: %s"
                   args: ['id(demo_mode_enabled) ? "ON" : "OFF"']
+              - if:
+                  condition:
+                    lambda: 'return !id(demo_mode_enabled);'  # If demo mode was turned OFF
+                  then:
+                    # Reset display to default state
+                    - lvgl.label.update:
+                        id: machine_status
+                        text: "NO DATA"
+                        text_color: 0xFF5722
+                    - lvgl.label.update:
+                        id: steam_temp_display
+                        text: "--°C"
+                        text_color: 0x555555
+                    - lvgl.label.update:
+                        id: target_temp_display
+                        text: "--°C"
+                        text_color: 0x555555
+                    - lvgl.label.update:
+                        id: hx_temp_display
+                        text: "--°C"
+                        text_color: 0x555555
+                    - lvgl.label.update:
+                        id: heating_status
+                        text: "\U000F1A45 HEAT"
+                        text_color: 0x333333
+                    - lvgl.label.update:
+                        id: pump_status
+                        text: "\U000F1B22 PUMP"
+                        text_color: 0x333333
+                    - lvgl.label.update:
+                        id: version_display
+                        text: "--"
+                        text_color: 0x555555
+                    - lvgl.label.update:
+                        id: brew_timer
+                        text: "00:00.0"
+                        text_color: 0x555555
+                    - lambda: |-
+                        // Clear chart data when demo mode is disabled
+                        clear_chart_data();
         - label:
             id: wifi_status
             align: TOP_RIGHT
@@ -181,19 +221,38 @@ lvgl:
         # Right column (3/4) - Temperature Chart
         - obj:
             id: graph_area
-            x: 155  # Adjusted for wider left panel (was 125)
+            x: 150  # Move 5px left (was 155)
             y: 35
-            width: 315  # Adjusted for wider left panel (was 345)
+            width: 320  # Increase width by 5px (was 315)
             height: 285  # Expanded to bottom (was 260)
             bg_color: 0x000000
             border_width: 0  # Remove border since chart has its own
             pad_all: 0
             scrollable: false  # Disable scrolling
             scroll_chain: false  # Disable scroll chain
-            click_focusable: false  # Disable click focus
+            click_focusable: false  # Disable click focus for now
             widgets:
               - label:
                   text: !lambda |-
                     create_temp_chart(id(graph_area));
                     return "";
+
+        # Transparent overlay for chart resolution toggle
+        - obj:
+            x: 150  # Same as graph area
+            y: 35   # Same as graph area
+            width: 320  # Same as graph area
+            height: 285  # Same as graph area
+            bg_opa: 0  # Fully transparent
+            border_opa: 0  # No border
+            on_click:
+              - globals.set:
+                  id: high_res_chart
+                  value: !lambda "return !id(high_res_chart);"
+              - logger.log:
+                  format: "Chart resolution toggled: %s"
+                  args: ['id(high_res_chart) ? "1s" : "5s"']
+              - lambda: |-
+                  // Force chart recreation with new labels
+                  recreate_temp_chart(id(graph_area));
 
