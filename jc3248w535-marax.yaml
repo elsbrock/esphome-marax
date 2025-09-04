@@ -4,7 +4,7 @@ esphome:
   platformio_options:
     build_flags:
       - -D LV_USE_CHART=1
-      - -D MARAX_TEST_MODE=0  # Set to 0 for production, 1 for development
+      - -D MARAX_TEST_MODE=1  # Set to 0 for production, 1 for development
   includes:
     - includes/chart_helpers.h
 
@@ -94,6 +94,47 @@ display:
       number: 45
       ignore_strapping_warning: true
     auto_clear_enabled: false
+
+# Time update interval
+interval:
+  - interval: 1s
+    then:
+      - lvgl.label.update:
+          id: time_display
+          text: !lambda |-
+            auto time = id(homeassistant_time).now();
+            if (time.is_valid()) {
+              return time.strftime("%H:%M").c_str();
+            }
+            return "--:--";
+      - if:
+          condition:
+            binary_sensor.is_on: wifi_connected
+          then:
+            - lvgl.label.update:
+                id: wifi_status
+                text: "\U000F05A9"
+                text_color: 0x4CAF50
+          else:
+            - lvgl.label.update:
+                id: wifi_status
+                text: "\U000F16B5"
+                text_color: 0xFF9800
+      # Update UART status based on demo mode
+      - if:
+          condition:
+            lambda: 'return id(demo_mode_enabled);'
+          then:
+            - lvgl.label.update:
+                id: uart_status
+                text_color: 0xFFC107  # Amber for demo mode
+          else:
+            - lvgl.label.update:
+                id: uart_status  
+                text_color: 0xFF9800  # Orange for no data
+      # Generate demo data when enabled
+      - lambda: |-
+          generate_test_data(false);  // Always call with false for UART connection status
 
 # Include component configurations
 <<: !include config/display_ui.yaml
