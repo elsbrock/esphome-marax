@@ -23,10 +23,7 @@ interval:
           
           uint8_t data;
           
-          #if MARAX_TEST_MODE
-          // Generate test data in development mode
-          generate_test_data(connected);
-          #endif
+          // Test data generation is now handled by demo mode toggle
           
           // Check for data timeout (5 seconds)
           uint32_t now = millis();
@@ -53,9 +50,8 @@ interval:
             ESP_LOGW("marax", "UART connection lost - no data for 5+ seconds");
           }
           
-          #if !MARAX_TEST_MODE
-          // In production mode: Blink "NO DATA" when not connected
-          if (!connected && id(machine_status) != nullptr) {
+          // Blink "NO DATA" when not connected (unless demo mode is active)
+          if (!connected && !id(demo_mode_enabled) && id(machine_status) != nullptr) {
             static uint32_t last_blink = 0;
             static bool blink_state = true;
             
@@ -70,7 +66,6 @@ interval:
               last_blink = now;
             }
           }
-          #endif
           
           while (id(marax_uart).available()) {
             id(marax_uart).read_byte(&data);
