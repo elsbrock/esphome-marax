@@ -50,9 +50,21 @@ A professional temperature monitoring display for the Lelit Mara X espresso mach
    - Open [ESPHome Web](https://web.esphome.io/) in Chrome or Edge
    - Click "Connect" and select your ESP32 device from the popup
    - Click "Install" and select the downloaded `.factory.bin` file
+   - **Optional**: Change the device name from `jc3248w535c-marax` to something friendlier like `Mara X Display`
    - Wait for flashing to complete
 
-3. **Configure WiFi** via the captive portal that appears on first boot
+3. **Configure WiFi** via the captive portal that appears on first boot:
+   - Look for WiFi network named `Marax-Display Fallback Hotspot`
+   - Connect using password: `12345678`
+   - Follow the setup wizard to configure your home WiFi
+
+### Future Updates (OTA)
+
+Once your device is connected to WiFi, you can update firmware over-the-air:
+
+- **ESPHome Dashboard**: Add the device and click "Install Wirelessly"
+- **Web Updates**: Use the `.ota.bin` file for wireless updates via ESPHome Web
+- **Home Assistant**: Updates can be managed through the ESPHome integration
 
 ### Option 2: Build from Source
 
