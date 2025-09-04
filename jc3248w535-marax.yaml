@@ -83,7 +83,7 @@ touchscreen:
 display:
   - platform: qspi_dbi
     id: main_display
-    model: JC3248W535
+    model: JC4832W535
     data_rate: 40MHz
     rotation: 90
     dimensions:
