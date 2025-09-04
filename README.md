@@ -4,13 +4,15 @@ A professional temperature monitoring display for the Lelit Mara X espresso mach
 
 ## Features
 
-- **Real-time temperature monitoring** with live graphs
-- **Professional LVGL interface** with smooth animations
+- **Real-time temperature monitoring** with interactive charts
+- **Professional LVGL interface** with smooth animations and touch controls
 - **Multi-series temperature charts** (Steam, HX, Target temperatures)
-- **5-minute rolling window** with 5-second data resolution
-- **Smart connectivity** - seamless switching between test and live data
+- **Dual resolution modes** - switchable 1s/5s data resolution via touch
+- **Interactive demo mode** - tap UART icon to enable test data simulation
+- **Precision shot timer** - 100ms resolution brewing timer (MM:SS.D format)  
+- **Smart connectivity** - seamless switching between demo and live data
 - **Touch-friendly interface** optimized for espresso workflow
-- **Material Design icons** for intuitive operation
+- **Material Design icons** with dynamic status colors
 
 ## Supported Devices
 
@@ -121,17 +123,24 @@ Where:
 
 ### Main Screen Layout
 
-- **Left Panel**: Current temperature readings, timer, version info
-- **Center**: Real-time temperature chart with 5-minute history
-- **Bottom**: System status indicators (Heat, Pump, UART connection)
+- **Top Bar**: Device title, machine status, time, UART signal, WiFi status
+- **Left Panel**: Shot timer, temperature readings (Steam, Target, HX), version, system status (Heat, Pump)
+- **Right Area**: Interactive real-time temperature chart with configurable history
 
-### Temperature Chart
+### Interactive Temperature Chart
 
 - **Red line**: Steam temperature
 - **Blue line**: HX/Brew temperature  
 - **Green line**: Target temperature
 - **Grid**: Subtle dotted lines for easy reading
-- **Axes**: Temperature scale (°C) and time scale (-5m to 0m)
+- **Dynamic time scale**: 5-minute history (5s resolution) or 1-minute history (1s resolution)
+- **Touch control**: Tap chart area to toggle between 1s/5s resolution modes
+
+### Touch Controls
+
+- **Tap UART icon**: Toggle demo mode (shows animated test data)
+- **Tap chart area**: Switch between 1-second and 5-second resolution
+- **Demo mode**: Automatically disables when real UART data is received
 
 ## Development
 
@@ -141,12 +150,18 @@ Requirements:
 - [ESPHome](https://esphome.io/) 2025.4.2 or later (earlier versions untested)
 - Platform: ESP32-S3 with ESP-IDF framework
 
-### No Data Handling
+### Data Modes
 
-When no UART connection is detected:
-- Display shows blinking "NO DATA" status
+**Demo Mode** (tap UART icon to enable):
+- Animated test data simulation
+- Running shot timer with 100ms precision
+- Realistic temperature patterns and machine cycles  
+- Automatically disables when real UART data is received
+
+**No Data Mode** (when no UART connection):
+- Blinking "NO DATA" status indicator
 - Temperature readings show "--°C"
-- System automatically switches to live data when Mara X is connected
+- System automatically switches to live data when Mara X connects
 
 ### Architecture
 

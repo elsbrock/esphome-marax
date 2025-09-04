@@ -95,6 +95,12 @@ interval:
                     ESP_LOGI("marax", "UART connection restored");
                   }
                   
+                  // Disable demo mode when real data arrives
+                  if (id(demo_mode_enabled)) {
+                    id(demo_mode_enabled) = false;
+                    ESP_LOGI("marax", "Demo mode disabled - real UART data received");
+                  }
+                  
                   // Parse values: version, steam_temp, target_temp, hx_temp, time, heat, pump
                   float steam_temp_val = std::stof(parts[1]);
                   float target_temp_val = std::stof(parts[2]);  
