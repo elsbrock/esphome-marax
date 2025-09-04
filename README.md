@@ -138,15 +138,15 @@ Where:
 ### Building from Source
 
 Requirements:
-- [ESPHome](https://esphome.io/) 2023.12.0 or later
+- [ESPHome](https://esphome.io/) 2025.4.2 or later (earlier versions untested)
 - Platform: ESP32-S3 with ESP-IDF framework
 
-### Testing
+### No Data Handling
 
-The system includes intelligent test data generation:
-- Displays animated sine waves when no UART connection is detected
-- Automatically switches to real data when Mara X is connected
-- No manual switching required
+When no UART connection is detected:
+- Display shows blinking "NO DATA" status
+- Temperature readings show "--°C"
+- System automatically switches to live data when Mara X is connected
 
 ### Architecture
 
