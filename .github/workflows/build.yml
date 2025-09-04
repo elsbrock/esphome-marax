@@ -24,6 +24,17 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      - name: Create secrets file for CI
+        run: |
+          cat > secrets.yaml << 'EOF'
+          # CI build secrets - these are dummy values for compilation only
+          wifi_ssid: "DummySSID"
+          wifi_password: "dummy_password_123"
+          api_encryption_key: "dummy_32_character_api_key_1234567"
+          ota_password: "dummy_ota_password"
+          ap_password: "dummy_ap_password"
+          EOF
+
       - name: Build ESPHome firmware
         uses: esphome/build-action@v7
         id: esphome-build
