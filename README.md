@@ -16,7 +16,7 @@ A professional temperature monitoring display for the Lelit Mara X espresso mach
 
 | Display Model | Status | Configuration File |
 |---------------|--------|--------------------|
-| JC3248W535C | ✅ Tested | `jc3248w535c-marax.yaml` |
+| jc3248w535 | ✅ Tested | `jc3248w535-marax.yaml` |
 
 ### Hardware Requirements
 
@@ -43,14 +43,14 @@ A professional temperature monitoring display for the Lelit Mara X espresso mach
 ### Option 1: Pre-built Firmware (Recommended)
 
 1. **Download firmware** from the [latest release](https://github.com/elsbrock/esphome-marax/releases)
-   - Download `jc3248w535c-marax-esp32s3.factory.bin` for complete installation
+   - Download `jc3248w535-marax-esp32s3.factory.bin` for complete installation
 
 2. **Flash using ESPHome Web** (Chrome/Edge required):
    - Connect ESP32-S3 via USB to your computer
    - Open [ESPHome Web](https://web.esphome.io/) in Chrome or Edge
    - Click "Connect" and select your ESP32 device from the popup
    - Click "Install" and select the downloaded `.factory.bin` file
-   - **Optional**: Change the device name from `jc3248w535c-marax` to something friendlier like `Mara X Display`
+   - **Optional**: Change the device name from `jc3248w535-marax` to something friendlier like `Mara X Display`
    - Wait for flashing to complete
 
 3. **Configure WiFi** via the captive portal that appears on first boot:
@@ -82,7 +82,7 @@ Once your device is connected to WiFi, you can update firmware over-the-air:
 
 3. **Flash to ESP32:**
    ```bash
-   esphome run jc3248w535c-marax.yaml
+   esphome run jc3248w535-marax.yaml
    ```
 
 ## Configuration Structure
@@ -90,7 +90,7 @@ Once your device is connected to WiFi, you can update firmware over-the-air:
 The project uses a modular configuration approach for maintainability:
 
 ```
-jc3248w535c-marax.yaml      # Main hardware configuration
+jc3248w535-marax.yaml      # Main hardware configuration
 config/
 ├── display_ui.yaml         # LVGL interface components  
 ├── fonts.yaml             # Font definitions and icons
