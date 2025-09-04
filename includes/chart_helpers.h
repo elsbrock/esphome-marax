@@ -2,7 +2,7 @@
 #include "esphome.h"
 
 // Temperature data storage
-#define CHART_DATA_POINTS 60  // 5 minutes at 5-second intervals
+#define CHART_DATA_POINTS 60  // 5 minutes at 5s intervals OR 1 minute at 1s intervals
 static float steam_temps[CHART_DATA_POINTS];
 static float hx_temps[CHART_DATA_POINTS];
 static float target_temps[CHART_DATA_POINTS];
@@ -19,6 +19,9 @@ static lv_chart_series_t* target_series = nullptr;
 // Forward declarations
 void update_temp_chart();
 void add_temp_data(float steam, float hx, float target);
+void update_chart_labels();
+void recreate_temp_chart(lv_obj_t* parent);
+void clear_chart_data();
 
 // Generate realistic Mara X protocol strings (only in demo mode)
 void generate_test_data(bool uart_connected) {
@@ -35,8 +38,19 @@ void generate_test_data(bool uart_connected) {
     
     uint32_t now = millis();
 
-    // Generate new protocol data every 2 seconds (like real Mara X)
-    if (now - last_update > 2000) {
+    // Generate new protocol data based on chart resolution
+    static bool globals_ready = false;
+    if (!globals_ready) {
+        // Check if globals are ready (avoid crash during startup)
+        globals_ready = (millis() > 5000);  // Wait 5 seconds after boot
+    }
+    
+    uint32_t update_interval = 5000;  // Default 5s interval
+    if (globals_ready) {
+        update_interval = id(high_res_chart) ? 1000 : 5000;  // 1s or 5s
+    }
+    
+    if (now - last_update > update_interval) {
         float time_offset = now / 20000.0f;  // Slower variation
         
         // Realistic temperature simulation with heating cycles
@@ -205,31 +219,7 @@ void generate_test_data(bool uart_connected) {
         last_update = now;
     }
     
-    // Update brew timer every 100ms (runs independently of demo mode)
-    static uint32_t timer_last_update = 0;
-    if (now - timer_last_update > 100) {  // Update every 100ms
-        // Start timer on first run or when demo mode is active
-        if (!timer_running && id(demo_mode_enabled)) {
-            timer_start = now;
-            timer_running = true;
-        }
-        
-        if (timer_running) {
-            uint32_t elapsed_ms = now - timer_start;
-            int minutes = elapsed_ms / 60000;
-            int seconds = (elapsed_ms % 60000) / 1000;
-            int deciseconds = (elapsed_ms % 1000) / 100;
-            std::string timer_text = str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds);
-            lv_label_set_text(&id(brew_timer), timer_text.c_str());
-            lv_obj_set_style_text_color(&id(brew_timer), lv_color_hex(0x00FF00), 0);
-        } else {
-            // Show 00:00.0 when not running
-            lv_label_set_text(&id(brew_timer), "00:00.0");
-            lv_obj_set_style_text_color(&id(brew_timer), lv_color_hex(0x555555), 0);
-        }
-        
-        timer_last_update = now;
-    }
+    // Timer is now updated separately via 100ms interval in main config
 }
 
 // Add temperature data point
@@ -325,12 +315,12 @@ void create_temp_chart(lv_obj_t* parent) {
         return;  // Already created
     }
 
-    // Create chart with room for Y-axis labels on left and X-axis below (parent container is 315x285)
+    // Create chart with room for Y-axis labels on left and X-axis below (parent container is 320x285)
     temp_chart = lv_chart_create(parent);
-    lv_obj_set_size(temp_chart, 280, 250);  // Adjusted for narrower container
+    lv_obj_set_size(temp_chart, 285, 250);  // Adjusted for wider container
     lv_obj_set_pos(temp_chart, 30, 5);      // Same position for Y labels
 
-    ESP_LOGI("chart", "Created chart: %p, size: 280x250", temp_chart);
+    ESP_LOGI("chart", "Created chart: %p, size: 285x250", temp_chart);
 
     // Chart configuration
     lv_chart_set_type(temp_chart, LV_CHART_TYPE_LINE);
@@ -385,10 +375,20 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_set_style_text_font(y_label, &lv_font_montserrat_14, 0);
     lv_obj_set_pos(y_label, 5, 25);  // Below first Y-axis value
 
-    // X-axis time labels - properly aligned with adjusted chart position
-    const char* time_labels[] = {"-5m", "-4m", "-3m", "-2m", "-1m", "0m"};
+    // X-axis time labels - check resolution dynamically if globals are available  
+    const char* time_labels_5s[] = {"-5m", "-4m", "-3m", "-2m", "-1m", "0m"};
+    const char* time_labels_1s[] = {"-50s", "-40s", "-30s", "-20s", "-10s", "0s"};
+    const char** time_labels = time_labels_5s;  // Default to 5s labels
+    
+    // Try to use current resolution if globals are ready
+    if (millis() > 5000) {  // Wait for globals to be ready
+        if (id(high_res_chart)) {
+            time_labels = time_labels_1s;
+        }
+    }
+    
     int chart_left = 30;  // Updated to match new chart position
-    int chart_width = 280; // Updated to match new chart width
+    int chart_width = 285; // Updated to match new chart width
     int label_spacing = chart_width / 5;  // 5 intervals for 6 labels
 
     for (int i = 0; i < 6; i++) {
@@ -398,11 +398,52 @@ void create_temp_chart(lv_obj_t* parent) {
         lv_obj_set_style_text_font(x_label, &lv_font_montserrat_14, 0);
         // Position: start at left edge, end at right edge
         int x_pos = chart_left + (i * label_spacing) - 10;
-        if (i == 5) x_pos = chart_left + chart_width - 18;  // Better alignment for "0m"
+        if (i == 5) x_pos = chart_left + chart_width - 18;  // Better alignment for "0s/0m"
         lv_obj_set_pos(x_label, x_pos, 260);  // Updated for expanded chart (was 235)
     }
 
     // Initialize empty - will be filled by animated test data
     data_index = 0;
     data_filled = false;
+}
+
+// Recreate chart with updated labels for resolution change
+void recreate_temp_chart(lv_obj_t* parent) {
+    // Clear existing chart and data
+    if (temp_chart != nullptr) {
+        lv_obj_del(temp_chart);
+        temp_chart = nullptr;
+        steam_series = nullptr;
+        hx_series = nullptr; 
+        target_series = nullptr;
+    }
+    
+    // Clear all child objects (labels) from parent
+    lv_obj_clean(parent);
+    
+    // Recreate chart with current resolution settings
+    create_temp_chart(parent);
+}
+
+// Clear chart data when demo mode is disabled
+void clear_chart_data() {
+    // Reset data arrays
+    for (int i = 0; i < CHART_DATA_POINTS; i++) {
+        steam_temps[i] = 0.0f;
+        hx_temps[i] = 0.0f;
+        target_temps[i] = 0.0f;
+        data_timestamps[i] = 0;
+    }
+    
+    // Reset data index and filled flag
+    data_index = 0;
+    data_filled = false;
+    
+    // Clear chart display if it exists
+    if (temp_chart != nullptr) {
+        lv_chart_set_all_value(temp_chart, steam_series, LV_CHART_POINT_NONE);
+        lv_chart_set_all_value(temp_chart, hx_series, LV_CHART_POINT_NONE);
+        lv_chart_set_all_value(temp_chart, target_series, LV_CHART_POINT_NONE);
+        lv_chart_refresh(temp_chart);
+    }
 }
