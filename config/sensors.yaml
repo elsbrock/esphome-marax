@@ -24,6 +24,15 @@ text_sensor:
     ip_address:
       name: "IP Address"
       id: wifi_ip
+    ssid:
+      name: "Connected SSID"
+      id: wifi_ssid
+
+# WiFi connection status
+binary_sensor:
+  - platform: status
+    name: "WiFi Connection"
+    id: wifi_connected
 
   - platform: template
     id: mara_raw_data
