@@ -20,24 +20,210 @@ static lv_chart_series_t* target_series = nullptr;
 void update_temp_chart();
 void add_temp_data(float steam, float hx, float target);
 
-// Generate animated test data (only when no UART data)
+// Generate realistic Mara X protocol strings (only in test mode)
 void generate_test_data(bool uart_connected) {
-    // Only generate test data if no real UART connection
+    #if MARAX_TEST_MODE
+    // Only generate test data if test mode is enabled and no real UART connection
     if (uart_connected) return;
+    #else
+    // Test mode disabled - no test data generation
+    return;
+    #endif
     
     static uint32_t last_update = 0;
+    static uint32_t sequence_counter = 840; // Start at typical sequence value
+    static bool heating_cycle = false;
+    static bool brewing_cycle = false;
+    static uint32_t cycle_start = 0;
+    static uint32_t timer_start = 0;  // Timer for brew timing
+    static bool timer_running = false;
+    
     uint32_t now = millis();
 
-    // Add new data point every 5 seconds
-    if (now - last_update > 5000) {
-        float time_offset = now / 10000.0f;  // Slow animation
-        float steam = 120 + 15 * sin(time_offset);              // Steam: 105-135°C
-        float hx = 95 + 10 * sin(time_offset + 1.57f);          // HX: 85-105°C
-        float target = 100 + 5 * sin(time_offset + 3.14f);      // Target: 95-105°C
-
-        add_temp_data(steam, hx, target);
+    // Generate new protocol data every 2 seconds (like real Mara X)
+    if (now - last_update > 2000) {
+        float time_offset = now / 20000.0f;  // Slower variation
+        
+        // Realistic temperature simulation with heating cycles
+        float steam_temp, target_temp, hx_temp;
+        int heat_status = 0, pump_active = 0;
+        
+        // Simulate heating cycle every 30 seconds
+        if (now - cycle_start > 30000) {
+            heating_cycle = !heating_cycle;
+            cycle_start = now;
+            
+            // Start brewing cycle randomly during non-heating periods
+            if (!heating_cycle && (now % 60000) < 5000) {
+                brewing_cycle = true;
+            }
+        }
+        
+        // End brewing cycle after 25 seconds
+        if (brewing_cycle && (now - cycle_start > 25000)) {
+            brewing_cycle = false;
+        }
+        
+        if (brewing_cycle) {
+            // Brewing: temperatures drop, pump active
+            steam_temp = 110 + 8 * sin(time_offset * 2);
+            hx_temp = 88 + 5 * sin(time_offset * 2 + 1);
+            target_temp = 93 + 3 * sin(time_offset * 2);
+            heat_status = 1;  // Heating to compensate
+            pump_active = 1;  // Pump active
+            
+            // Start timer when brewing starts
+            if (!timer_running) {
+                timer_start = now;
+                timer_running = true;
+            }
+        } else if (heating_cycle) {
+            // Heating up: temperatures rising
+            steam_temp = 115 + 12 * sin(time_offset);
+            hx_temp = 92 + 8 * sin(time_offset + 0.5);
+            target_temp = 98 + 4 * sin(time_offset + 1);
+            heat_status = 1;
+            pump_active = 0;
+        } else {
+            // Idle: stable temperatures
+            steam_temp = 118 + 3 * sin(time_offset * 0.5);
+            hx_temp = 94 + 2 * sin(time_offset * 0.5 + 1);
+            target_temp = 98 + 1 * sin(time_offset * 0.5);
+            heat_status = 0;
+            pump_active = 0;
+        }
+        
+        // Build protocol string: C1.06,steam,target,hx,sequence,heat,pump
+        sequence_counter = (sequence_counter + 1) % 10000;
+        std::string protocol_data = str_sprintf("C1.06,%03.0f,%03.0f,%03.0f,%04d,%d,%d\n",
+                                               steam_temp, target_temp, hx_temp, 
+                                               sequence_counter, heat_status, pump_active);
+        
+        // Inject protocol string into UART buffer for parsing
+        // This simulates receiving actual UART data
+        ESP_LOGD("test_data", "Injecting protocol: %s", protocol_data.c_str());
+        
+        // We can't directly inject into UART, so we'll call the parsing logic directly
+        // Parse the test data through the same logic used for real UART data
+        std::vector<std::string> parts;
+        std::string current = "";
+        
+        for (char c : protocol_data) {
+            if (c == ',' || c == '\n') {
+                parts.push_back(current);
+                current = "";
+            } else if (c != 'C' || !parts.empty()) {  // Skip initial 'C'
+                current += c;
+            }
+        }
+        
+        if (parts.size() >= 7) {
+            float steam_val = std::stof(parts[1]);
+            float target_val = std::stof(parts[2]);
+            float hx_val = std::stof(parts[3]);
+            
+            // Add to chart through normal data flow
+            add_temp_data(steam_val, hx_val, target_val);
+            
+            // Update display labels with color coding
+            lv_label_set_text(&id(steam_temp_display), str_sprintf("%.0f°C", steam_val).c_str());
+            // Steam temp colors: Red >115°C, Yellow 90-115°C, Gray <90°C
+            if (steam_val > 115) {
+                lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+            } else if (steam_val > 90) {
+                lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
+            } else {
+                lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0x555555), 0);  // Gray
+            }
+            
+            lv_label_set_text(&id(target_temp_display), str_sprintf("%.0f°C", target_val).c_str());
+            // Target temp always green (it's the reference)
+            lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
+            
+            lv_label_set_text(&id(hx_temp_display), str_sprintf("%.0f°C", hx_val).c_str());
+            // HX/Brew temp colors: Green 88-96°C, Yellow 85-88/96-100°C, Red outside
+            if (hx_val >= 88 && hx_val <= 96) {
+                lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
+            } else if ((hx_val >= 85 && hx_val < 88) || (hx_val > 96 && hx_val <= 100)) {
+                lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
+            } else {
+                lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+            }
+            
+            // Update status indicators
+            if (heat_status == 1) {
+                lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+                lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0xFF5722), 0);
+            } else {
+                lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+                lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0x555555), 0);
+            }
+            
+            if (pump_active == 1) {
+                lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
+                lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
+            } else {
+                lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
+                lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
+            }
+            
+            
+            // Update UART status to show test data
+            lv_label_set_text(&id(uart_status), "\U000F065C TEST");
+            lv_obj_set_style_text_color(&id(uart_status), lv_color_hex(0xFFC107), 0);  // Amber for test
+            
+            // Show "TEST MODE" in machine status when in test mode
+            static uint32_t last_blink = 0;
+            static bool blink_state = true;
+            
+            // Blink "TEST MODE" every 1 second to distinguish from real data
+            if (now - last_blink > 1000) {
+                if (blink_state) {
+                    // Show actual status (READY/HEATING UP/BREWING) 
+                    if (pump_active == 1) {
+                        lv_label_set_text(&id(machine_status), "BREWING");
+                        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0x2196F3), 0);
+                    } else if (heat_status == 1) {
+                        lv_label_set_text(&id(machine_status), "HEATING UP");
+                        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0xFF9800), 0);
+                    } else {
+                        lv_label_set_text(&id(machine_status), "READY");
+                        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0x4CAF50), 0);
+                    }
+                } else {
+                    // Alternate with "TEST MODE"
+                    lv_label_set_text(&id(machine_status), "TEST MODE");
+                    lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0xFFC107), 0);  // Amber
+                }
+                blink_state = !blink_state;
+                last_blink = now;
+            }
+            
+            // Update version display
+            lv_label_set_text(&id(version_display), "V1.06");
+            
+            
+            ESP_LOGD("test_data", "Generated: Steam=%.0f Target=%.0f HX=%.0f Heat=%d Pump=%d", 
+                     steam_val, target_val, hx_val, heat_status, pump_active);
+        }
+        
         last_update = now;
     }
+    
+    // Update brew timer every 100ms (outside test data block)
+    // Start timer on first run
+    if (!timer_running) {
+        timer_start = now;
+        timer_running = true;
+    }
+    
+    uint32_t elapsed_ms = now - timer_start;  // Keep in milliseconds
+    int minutes = elapsed_ms / 60000;
+    int seconds = (elapsed_ms % 60000) / 1000;
+    int deciseconds = (elapsed_ms % 1000) / 100;
+    std::string timer_text = str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds);
+    lv_label_set_text(&id(brew_timer), timer_text.c_str());
+    lv_obj_set_style_text_color(&id(brew_timer), lv_color_hex(0x00FF00), 0);  // Green when running
 }
 
 // Add temperature data point
@@ -82,7 +268,7 @@ void get_temp_range(float& min_temp, float& max_temp) {
     if (max_temp > 200) max_temp = 200;
 }
 
-// Update chart data
+// Update chart data with dynamic grid
 void update_temp_chart() {
     if (temp_chart == nullptr) return;
 
@@ -102,10 +288,27 @@ void update_temp_chart() {
         lv_chart_set_next_value(temp_chart, target_series, (int32_t)target_temps[idx]);
     }
 
-    // Update chart range
+    // Update chart range with dynamic scaling
     float min_temp, max_temp;
     get_temp_range(min_temp, max_temp);
     lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
+    
+    // Dynamic grid lines based on temperature range
+    float temp_range = max_temp - min_temp;
+    int y_divs = 4;  // Default
+    int x_divs = 6;  // Time divisions
+    
+    if (temp_range > 50) {
+        y_divs = 8;  // More divisions for large ranges
+    } else if (temp_range > 30) {
+        y_divs = 6;  // Medium divisions
+    } else if (temp_range > 15) {
+        y_divs = 4;  // Fewer divisions for small ranges
+    } else {
+        y_divs = 3;  // Minimal for very small ranges
+    }
+    
+    lv_chart_set_div_line_count(temp_chart, y_divs, x_divs);
 
     lv_chart_refresh(temp_chart);
 }
@@ -136,12 +339,14 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(temp_chart, 0, LV_PART_MAIN);
     lv_obj_set_scrollbar_mode(temp_chart, LV_SCROLLBAR_MODE_OFF);
 
-    // Subtle grid - much darker, dotted
-    lv_obj_set_style_line_color(temp_chart, lv_color_hex(0x222222), LV_PART_MAIN);
+    // Fine-grained dynamic grid
+    lv_obj_set_style_line_color(temp_chart, lv_color_hex(0x1A1A1A), LV_PART_MAIN);
     lv_obj_set_style_line_width(temp_chart, 1, LV_PART_MAIN);
     lv_obj_set_style_line_dash_width(temp_chart, 1, LV_PART_MAIN);
-    lv_obj_set_style_line_dash_gap(temp_chart, 3, LV_PART_MAIN);
-    lv_chart_set_div_line_count(temp_chart, 3, 6);  // Even fewer lines
+    lv_obj_set_style_line_dash_gap(temp_chart, 2, LV_PART_MAIN);
+    
+    // Dynamic grid lines based on temperature range - will be updated in update_temp_chart()
+    lv_chart_set_div_line_count(temp_chart, 6, 10);  // More fine-grained grid
 
     // Background
     lv_obj_set_style_bg_color(temp_chart, lv_color_hex(0x000000), LV_PART_MAIN);
