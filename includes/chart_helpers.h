@@ -20,15 +20,10 @@ static lv_chart_series_t* target_series = nullptr;
 void update_temp_chart();
 void add_temp_data(float steam, float hx, float target);
 
-// Generate realistic Mara X protocol strings (only in test mode)
+// Generate realistic Mara X protocol strings (only in demo mode)
 void generate_test_data(bool uart_connected) {
-    #if MARAX_TEST_MODE
-    // Only generate test data if test mode is enabled and no real UART connection
-    if (uart_connected) return;
-    #else
-    // Test mode disabled - no test data generation
-    return;
-    #endif
+    // Only generate test data if demo mode is enabled and no real UART connection
+    if (uart_connected || !id(demo_mode_enabled)) return;
     
     static uint32_t last_update = 0;
     static uint32_t sequence_counter = 840; // Start at typical sequence value
@@ -168,9 +163,9 @@ void generate_test_data(bool uart_connected) {
             }
             
             
-            // Update UART status to show test data
-            lv_label_set_text(&id(uart_status), "\U000F065C TEST");
-            lv_obj_set_style_text_color(&id(uart_status), lv_color_hex(0xFFC107), 0);  // Amber for test
+            // Update UART status to show demo mode (signal icon)
+            lv_label_set_text(&id(uart_status), "\U000F04A2");
+            lv_obj_set_style_text_color(&id(uart_status), lv_color_hex(0xFFC107), 0);  // Amber for demo
             
             // Show "TEST MODE" in machine status when in test mode
             static uint32_t last_blink = 0;
@@ -210,20 +205,31 @@ void generate_test_data(bool uart_connected) {
         last_update = now;
     }
     
-    // Update brew timer every 100ms (outside test data block)
-    // Start timer on first run
-    if (!timer_running) {
-        timer_start = now;
-        timer_running = true;
+    // Update brew timer every 100ms (runs independently of demo mode)
+    static uint32_t timer_last_update = 0;
+    if (now - timer_last_update > 100) {  // Update every 100ms
+        // Start timer on first run or when demo mode is active
+        if (!timer_running && id(demo_mode_enabled)) {
+            timer_start = now;
+            timer_running = true;
+        }
+        
+        if (timer_running) {
+            uint32_t elapsed_ms = now - timer_start;
+            int minutes = elapsed_ms / 60000;
+            int seconds = (elapsed_ms % 60000) / 1000;
+            int deciseconds = (elapsed_ms % 1000) / 100;
+            std::string timer_text = str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds);
+            lv_label_set_text(&id(brew_timer), timer_text.c_str());
+            lv_obj_set_style_text_color(&id(brew_timer), lv_color_hex(0x00FF00), 0);
+        } else {
+            // Show 00:00.0 when not running
+            lv_label_set_text(&id(brew_timer), "00:00.0");
+            lv_obj_set_style_text_color(&id(brew_timer), lv_color_hex(0x555555), 0);
+        }
+        
+        timer_last_update = now;
     }
-    
-    uint32_t elapsed_ms = now - timer_start;  // Keep in milliseconds
-    int minutes = elapsed_ms / 60000;
-    int seconds = (elapsed_ms % 60000) / 1000;
-    int deciseconds = (elapsed_ms % 1000) / 100;
-    std::string timer_text = str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds);
-    lv_label_set_text(&id(brew_timer), timer_text.c_str());
-    lv_obj_set_style_text_color(&id(brew_timer), lv_color_hex(0x00FF00), 0);  // Green when running
 }
 
 // Add temperature data point
@@ -319,12 +325,12 @@ void create_temp_chart(lv_obj_t* parent) {
         return;  // Already created
     }
 
-    // Create chart with room for Y-axis labels on left and X-axis below (parent container is 345x260)
+    // Create chart with room for Y-axis labels on left and X-axis below (parent container is 315x285)
     temp_chart = lv_chart_create(parent);
-    lv_obj_set_size(temp_chart, 310, 225);  // Larger size for bigger container
+    lv_obj_set_size(temp_chart, 280, 250);  // Adjusted for narrower container
     lv_obj_set_pos(temp_chart, 30, 5);      // Same position for Y labels
 
-    ESP_LOGI("chart", "Created chart: %p, size: 310x225", temp_chart);
+    ESP_LOGI("chart", "Created chart: %p, size: 280x250", temp_chart);
 
     // Chart configuration
     lv_chart_set_type(temp_chart, LV_CHART_TYPE_LINE);
@@ -382,7 +388,7 @@ void create_temp_chart(lv_obj_t* parent) {
     // X-axis time labels - properly aligned with adjusted chart position
     const char* time_labels[] = {"-5m", "-4m", "-3m", "-2m", "-1m", "0m"};
     int chart_left = 30;  // Updated to match new chart position
-    int chart_width = 310; // Updated to match new chart width
+    int chart_width = 280; // Updated to match new chart width
     int label_spacing = chart_width / 5;  // 5 intervals for 6 labels
 
     for (int i = 0; i < 6; i++) {
@@ -393,7 +399,7 @@ void create_temp_chart(lv_obj_t* parent) {
         // Position: start at left edge, end at right edge
         int x_pos = chart_left + (i * label_spacing) - 10;
         if (i == 5) x_pos = chart_left + chart_width - 18;  // Better alignment for "0m"
-        lv_obj_set_pos(x_label, x_pos, 235);  // Lower position for taller chart
+        lv_obj_set_pos(x_label, x_pos, 260);  // Updated for expanded chart (was 235)
     }
 
     // Initialize empty - will be filled by animated test data
