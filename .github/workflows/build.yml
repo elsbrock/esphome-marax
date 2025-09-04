@@ -15,6 +15,10 @@ jobs:
   build:
     name: Build Firmware
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        device:
+          - jc3248w535c-marax
     
     steps:
       - name: Checkout source code
@@ -24,7 +28,7 @@ jobs:
         uses: esphome/build-action@v7
         id: esphome-build
         with:
-          yaml_file: jc3248w535c-marax.yaml
+          yaml-file: ${{ matrix.device }}.yaml
           version: latest
           
       - name: Move generated files to output
@@ -36,7 +40,7 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          name: firmware-${{ matrix.device }}
           path: output/
 
   release:
@@ -49,11 +53,12 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
         
-      - name: Download firmware artifacts
+      - name: Download all firmware artifacts
         uses: actions/download-artifact@v4
         with:
-          name: firmware
+          pattern: firmware-*
           path: firmware/
+          merge-multiple: true
           
       - name: List firmware files
         run: |
@@ -71,14 +76,17 @@ jobs:
             Ready-to-flash firmware for ESP32-S3 with Mara X temperature monitoring.
             
             ### Installation
-            1. Download the appropriate firmware file
-            2. Flash using ESPHome Dashboard, esptool, or web flasher
+            1. Download the appropriate firmware file for your display model
+            2. Flash using [ESPHome Web](https://web.esphome.io/) or ESPHome Dashboard
             3. Configure WiFi credentials via captive portal
             
-            ### Firmware Files
-            - `jc3248w535c-marax-esp32s3.bin` - Main firmware binary
-            - `jc3248w535c-marax-esp32s3.factory.bin` - Factory image with bootloader
-            - `jc3248w535c-marax-esp32s3.ota.bin` - OTA update binary
+            ### Supported Devices
+            - **JC3248W535C**: Use `jc3248w535c-marax-esp32s3.*` files
+            
+            ### File Types
+            - `.factory.bin` - Complete firmware with bootloader (recommended for first install)
+            - `.bin` - Application firmware only (for updates)
+            - `.ota.bin` - Over-the-air update file
             
             See [README.md](README.md) for complete setup instructions.
         env:
