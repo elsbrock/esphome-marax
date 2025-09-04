@@ -136,7 +136,9 @@ lvgl:
             bg_color: 0x000000
             border_width: 0  # Remove border since chart has its own
             pad_all: 0
-            scrollbar_mode: "OFF"  # Disable parent container scrollbar
+            scrollable: false  # Disable scrolling
+            scroll_chain: false  # Disable scroll chain
+            click_focusable: false  # Disable click focus
             widgets:
               - label:
                   text: !lambda |-
