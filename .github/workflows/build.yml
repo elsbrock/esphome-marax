@@ -24,7 +24,7 @@ jobs:
         uses: esphome/build-action@v3
         id: esphome-build
         with:
-          yaml_file: marax-display.yaml
+          yaml_file: jc3248w535c-marax.yaml
           version: latest
           
       - name: Move generated files to output
@@ -76,9 +76,9 @@ jobs:
             3. Configure WiFi credentials via captive portal
             
             ### Firmware Files
-            - `marax-display-esp32s3.bin` - Main firmware binary
-            - `marax-display-esp32s3.factory.bin` - Factory image with bootloader
-            - `marax-display-esp32s3.ota.bin` - OTA update binary
+            - `jc3248w535c-marax-esp32s3.bin` - Main firmware binary
+            - `jc3248w535c-marax-esp32s3.factory.bin` - Factory image with bootloader
+            - `jc3248w535c-marax-esp32s3.ota.bin` - OTA update binary
             
             See [README.md](README.md) for complete setup instructions.
         env:
