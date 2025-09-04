@@ -1,5 +1,5 @@
 {
-  "name": "JC3248W535C Mara X Display",
+  "name": "jc3248w535 Mara X Display",
   "version": "1.0.0",
   "home_assistant_domain": "esphome",
   "funding_url": "https://github.com/sponsors/elsbrock",
@@ -10,7 +10,7 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "jc3248w535c-marax-esp32s3.factory.bin",
+          "path": "jc3248w535-marax-esp32s3.factory.bin",
           "offset": 0
         }
       ]

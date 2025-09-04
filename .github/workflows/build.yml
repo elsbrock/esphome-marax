@@ -18,8 +18,8 @@ jobs:
     strategy:
       matrix:
         device:
-          - jc3248w535c-marax
-    
+          - jc3248w535-marax
+
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
         with:
           yaml-file: ${{ matrix.device }}.yaml
           version: latest
-          
+
       - name: Move generated files to output
         run: |
           mkdir -p output
@@ -59,23 +59,23 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
-    
+
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
-        
+
       - name: Download all firmware artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: firmware-*
           path: firmware/
           merge-multiple: true
-          
+
       - name: List firmware files
         run: |
           echo "Generated firmware files:"
           ls -la firmware/
-          
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -83,22 +83,22 @@ jobs:
           generate_release_notes: true
           body: |
             ## ESPHome Mara X Display Firmware
-            
+
             Ready-to-flash firmware for ESP32-S3 with Mara X temperature monitoring.
-            
+
             ### Installation
             1. Download the appropriate firmware file for your display model
             2. Flash using [ESPHome Web](https://web.esphome.io/) or ESPHome Dashboard
             3. Configure WiFi credentials via captive portal
-            
+
             ### Supported Devices
-            - **JC3248W535C**: Use `jc3248w535c-marax-esp32s3.*` files
-            
+            - **jc3248w535**: Use `jc3248w535-marax-esp32s3.*` files
+
             ### File Types
             - `.factory.bin` - Complete firmware with bootloader (recommended for first install)
             - `.bin` - Application firmware only (for updates)
             - `.ota.bin` - Over-the-air update file
-            
+
             See [README.md](README.md) for complete setup instructions.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
