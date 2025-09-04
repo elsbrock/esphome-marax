@@ -1,0 +1,137 @@
+# Test data generation and Mara X protocol parsing
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          // Read UART data and parse Mara X protocol
+          static std::string buffer = "";
+          static uint32_t last_data_time = 0;
+          static bool connected = false;
+          
+          // Generate animated test data for chart (only when no UART data)
+          generate_test_data(connected);
+          uint8_t data;
+          
+          // Check for data timeout (5 seconds)
+          uint32_t now = millis();
+          if (connected && (now - last_data_time) > 5000) {
+            // Connection lost - show disconnected state
+            connected = false;
+            
+            // Update display with N/A values
+            lv_label_set_text((lv_obj_t*)id(steam_temp_display), "--°C");
+            lv_label_set_text((lv_obj_t*)id(target_temp_display), "--°C");
+            lv_label_set_text((lv_obj_t*)id(hx_temp_display), "--°C");
+            lv_label_set_text((lv_obj_t*)id(version_display), "--");
+            
+            // Update status indicators to inactive
+            lv_label_set_text((lv_obj_t*)id(heating_status), "\U000F1A45 HEAT");
+            lv_obj_set_style_text_color((lv_obj_t*)id(heating_status), lv_color_hex(0x333333), 0);
+            lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1B22 PUMP");
+            lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x333333), 0);
+            
+            // Update machine status
+            lv_label_set_text((lv_obj_t*)id(machine_status), "NO DATA");
+            lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0xFF5722), 0);
+            
+            // Update UART status
+            lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F065C UART");
+            lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0xFF5722), 0);
+            
+            ESP_LOGW("marax", "UART connection lost - no data for 5+ seconds");
+          }
+          
+          while (id(marax_uart).available()) {
+            id(marax_uart).read_byte(&data);
+            buffer += (char)data;
+            
+            // Look for newline (end of message)
+            if (data == '\n') {
+              // Parse format: C1.06,116,124,093,0840,1,0
+              if (buffer.length() > 10 && buffer[0] == 'C') {
+                std::vector<std::string> parts;
+                std::string current = "";
+                
+                for (char c : buffer) {
+                  if (c == ',' || c == '\n') {
+                    parts.push_back(current);
+                    current = "";
+                  } else {
+                    current += c;
+                  }
+                }
+                
+                if (parts.size() >= 7) {
+                  // Valid data received - update connection state
+                  last_data_time = now;
+                  if (!connected) {
+                    connected = true;
+                    ESP_LOGI("marax", "UART connection restored");
+                  }
+                  
+                  // Parse values: version, steam_temp, target_temp, hx_temp, time, heat, pump
+                  float steam_temp_val = std::stof(parts[1]);
+                  float target_temp_val = std::stof(parts[2]);  
+                  float hx_temp_val = std::stof(parts[3]);
+                  int heat_status = std::stoi(parts[5]);
+                  int pump_status = std::stoi(parts[6]);
+                  
+                  // Update sensors
+                  id(steam_temp).publish_state(steam_temp_val);
+                  id(service_temp).publish_state(target_temp_val);
+                  id(hx_temp).publish_state(hx_temp_val);
+                  
+                  // Add data to chart
+                  add_temp_data(steam_temp_val, hx_temp_val, target_temp_val);
+                  
+                  // Update display labels
+                  lv_label_set_text((lv_obj_t*)id(steam_temp_display), str_sprintf("%.0f°C", steam_temp_val).c_str());
+                  lv_label_set_text((lv_obj_t*)id(target_temp_display), str_sprintf("%.0f°C", target_temp_val).c_str());
+                  lv_label_set_text((lv_obj_t*)id(hx_temp_display), str_sprintf("%.0f°C", hx_temp_val).c_str());
+                  
+                  // Update status indicators
+                  if (heat_status == 1) {
+                    lv_label_set_text((lv_obj_t*)id(heating_status), "\U000F1A45 HEAT");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(heating_status), lv_color_hex(0xFF5722), 0);
+                  } else {
+                    lv_label_set_text((lv_obj_t*)id(heating_status), "\U000F1A45 HEAT");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(heating_status), lv_color_hex(0x555555), 0);
+                  }
+                  
+                  if (pump_status == 1) {
+                    lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1402 PUMP");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x2196F3), 0);
+                  } else {
+                    lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1B22 PUMP");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x555555), 0);
+                  }
+                  
+                  // Update machine status
+                  if (pump_status == 1) {
+                    lv_label_set_text((lv_obj_t*)id(machine_status), "BREWING");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0x2196F3), 0);
+                  } else if (heat_status == 1) {
+                    lv_label_set_text((lv_obj_t*)id(machine_status), "HEATING UP");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0xFF9800), 0);
+                  } else {
+                    lv_label_set_text((lv_obj_t*)id(machine_status), "READY");
+                    lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0x4CAF50), 0);
+                  }
+                  
+                  // Update UART status to connected
+                  lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F065C UART");
+                  lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0x4CAF50), 0);
+                  
+                  // Update version from first part (e.g., "C1.06")
+                  std::string version = parts[0].substr(1); // Remove 'C'
+                  lv_label_set_text((lv_obj_t*)id(version_display), ("V" + version).c_str());
+                  id(mara_version).publish_state(version.c_str());
+                  id(mara_raw_data).publish_state(buffer.c_str());
+                  
+                  ESP_LOGD("marax", "Parsed: Steam=%.0f Target=%.0f HX=%.0f Heat=%d Pump=%d", 
+                           steam_temp_val, target_temp_val, hx_temp_val, heat_status, pump_status);
+                }
+              }
+              buffer = "";
+            }
+          }

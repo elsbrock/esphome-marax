@@ -1,0 +1,33 @@
+# Fonts for LVGL
+font:
+  - file: "gfonts://Roboto"
+    id: default_font
+    size: 16
+    bpp: 4
+    extras:
+      - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf"
+        glyphs: [
+          "\U000F1A45", # mdi-heat-wave
+          "\U000F1B22", # mdi-pump-off
+          "\U000F1402", # mdi-pump
+          "\U000F065C", # mdi-uart
+          "\U000F0140"  # mdi-arrow-right
+        ]
+  - file: "gfonts://Roboto@700"
+    id: header_font
+    size: 20
+    bpp: 4
+    extras:
+      - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf"
+        glyphs: [
+          "\U000F05A9", # mdi-wifi
+          "\U000F02E3"  # mdi-coffee
+        ]
+  - file: "gfonts://Roboto@700"
+    id: temp_font
+    size: 32
+    bpp: 4
+  - file: "gfonts://Roboto"
+    id: small_font
+    size: 12
+    bpp: 4
