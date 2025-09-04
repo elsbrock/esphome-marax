@@ -4,6 +4,7 @@ esphome:
   platformio_options:
     build_flags:
       - -D LV_USE_CHART=1
+      - -D MARAX_TEST_MODE=0  # Set to 0 for production, 1 for development
   includes:
     - includes/chart_helpers.h
 
