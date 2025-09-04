@@ -1,3 +1,9 @@
+# Demo mode toggle
+globals:
+  - id: demo_mode_enabled
+    type: bool
+    initial_value: 'false'
+
 # Sensors for Mara X temperature data
 sensor:
   - platform: template
@@ -17,6 +23,11 @@ sensor:
     name: "HX Temperature"
     unit_of_measurement: "°C"
     accuracy_decimals: 1
+
+# Time sensor
+time:
+  - platform: homeassistant
+    id: homeassistant_time
 
 # Text sensors
 text_sensor:
