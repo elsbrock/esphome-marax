@@ -106,19 +106,6 @@ interval:
               return time.strftime("%H:%M").c_str();
             }
             return "--:--";
-      - if:
-          condition:
-            binary_sensor.is_on: wifi_connected
-          then:
-            - lvgl.label.update:
-                id: wifi_status
-                text: "\U000F05A9"
-                text_color: 0x4CAF50
-          else:
-            - lvgl.label.update:
-                id: wifi_status
-                text: "\U000F16B5"
-                text_color: 0xFF9800
       # Update UART status based on demo mode
       - if:
           condition:
@@ -142,25 +129,47 @@ interval:
           condition:
             lambda: 'return id(demo_mode_enabled);'
           then:
-            - lvgl.label.update:
-                id: brew_timer
-                text: !lambda |-
-                  static uint32_t timer_start = 0;
-                  static bool timer_running = false;
-                  uint32_t now = millis();
-                  
-                  // Start timer when demo mode is enabled
-                  if (!timer_running) {
-                      timer_start = now;
-                      timer_running = true;
+            - lambda: |-
+                static uint32_t timer_start = 0;
+                static bool timer_running = false;
+                static uint32_t last_flash = 0;
+                static bool flash_state = false;
+                uint32_t now = millis();
+                
+                // Start timer when demo mode is enabled
+                if (!timer_running) {
+                    timer_start = now;
+                    timer_running = true;
+                }
+                
+                uint32_t elapsed_ms = now - timer_start;
+                int minutes = elapsed_ms / 60000;
+                int seconds = (elapsed_ms % 60000) / 1000;
+                int deciseconds = (elapsed_ms % 1000) / 100;
+                
+                // Check if we're in the 30-second flash window (30s to 33s only)
+                bool flash_mode = (elapsed_ms >= 30000 && elapsed_ms < 33000);
+                
+                if (flash_mode) {
+                  // Flash every 300ms for 3 seconds only
+                  if (now - last_flash > 300) {
+                    flash_state = !flash_state;
+                    last_flash = now;
                   }
-                  
-                  uint32_t elapsed_ms = now - timer_start;
-                  int minutes = elapsed_ms / 60000;
-                  int seconds = (elapsed_ms % 60000) / 1000;
-                  int deciseconds = (elapsed_ms % 1000) / 100;
-                  return str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds).c_str();
-                text_color: 0x00FF00  # Green when running
+                } else {
+                  flash_state = false;  // Ensure we're not stuck in flash state
+                }
+                
+                // Update timer text and color
+                lv_label_set_text((lv_obj_t*)id(brew_timer), 
+                  str_sprintf("%02d:%02d.%01d", minutes, seconds, deciseconds).c_str());
+                
+                // Simple timer color flash only (much safer for LVGL)
+                if (flash_mode && flash_state) {
+                  lv_obj_set_style_text_color((lv_obj_t*)id(brew_timer), lv_color_hex(0xFF0000), 0);  // Red flash
+                } else {
+                  lv_obj_set_style_text_color((lv_obj_t*)id(brew_timer), lv_color_hex(0x00FF00), 0);  // Green normal
+                }
           else:
             - lvgl.label.update:
                 id: brew_timer
