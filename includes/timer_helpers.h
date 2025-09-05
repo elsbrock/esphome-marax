@@ -6,12 +6,15 @@ static uint32_t timer_start = 0;
 static bool timer_running = false;
 static uint32_t last_flash = 0;
 static bool flash_state = false;
+static bool timer_color_initialized = false;
 
 // Timer control functions
 void reset_timer() {
     timer_start = millis();
     timer_running = false;
     flash_state = false;
+    // Reset color initialization when timer is reset
+    timer_color_initialized = false;
 }
 
 void start_timer() {
@@ -21,6 +24,8 @@ void start_timer() {
         // Reset flash state when starting
         flash_state = false;
         last_flash = 0;
+        // Reset color initialization to ensure green start
+        timer_color_initialized = false;
     }
 }
 
@@ -67,12 +72,11 @@ void update_timer_display(lv_obj_t* timer_label) {
     // Update color only when state changes to reduce LVGL calls
     static bool last_flash_state = false;
     static bool last_flash_mode = false;
-    static bool color_initialized = false;
     
     // Ensure timer starts green on first run
-    if (!color_initialized) {
+    if (!timer_color_initialized) {
         lv_obj_set_style_text_color(timer_label, lv_color_hex(0x00FF00), 0);  // Green initial
-        color_initialized = true;
+        timer_color_initialized = true;
         last_flash_state = flash_state;
         last_flash_mode = flash_mode;
         return;
