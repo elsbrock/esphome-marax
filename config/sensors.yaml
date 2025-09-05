@@ -9,6 +9,9 @@ globals:
   - id: timer_reset_requested
     type: bool
     initial_value: 'false'
+  - id: post_brew_timer
+    type: uint32_t
+    initial_value: '0'
 
 # Sensors for Mara X temperature data
 sensor:
