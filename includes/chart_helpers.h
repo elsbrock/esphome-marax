@@ -204,10 +204,6 @@ void generate_test_data(bool uart_connected) {
             }
             
             
-            // Update UART status to show demo mode (signal icon)
-            lv_label_set_text(&id(uart_status), "\U000F04A2");
-            lv_obj_set_style_text_color(&id(uart_status), lv_color_hex(0xFFC107), 0);  // Amber for demo
-            
             // Show "TEST MODE" in machine status when in test mode
             static uint32_t last_blink = 0;
             static bool blink_state = true;

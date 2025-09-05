@@ -114,10 +114,12 @@ interval:
           then:
             - lvgl.label.update:
                 id: uart_status
+                text: "\U000F04A2"  # Signal icon for demo mode
                 text_color: 0xFFC107  # Amber for demo mode
           else:
             - lvgl.label.update:
                 id: uart_status  
+                text: "\U000F08BF"  # No signal icon when no data
                 text_color: 0xFF9800  # Orange for no data
       # Generate demo data when enabled with dynamic resolution
       - lambda: |-
