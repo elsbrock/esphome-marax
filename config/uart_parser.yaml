@@ -9,17 +9,6 @@ interval:
           static bool connected = false;
           static bool test_mode_active = false;  // Track if we're showing test data
           
-          // Update WiFi status icon (only if LVGL is initialized)
-          if (id(wifi_status) != nullptr) {
-            bool wifi_status_state = id(wifi_connected).state;
-            if (wifi_status_state) {
-              lv_label_set_text((lv_obj_t*)id(wifi_status), "\U000F05A9");  // WiFi connected icon
-              lv_obj_set_style_text_color((lv_obj_t*)id(wifi_status), lv_color_hex(0x4CAF50), 0);  // Green
-            } else {
-              lv_label_set_text((lv_obj_t*)id(wifi_status), "\U000F05AA");  // WiFi off icon  
-              lv_obj_set_style_text_color((lv_obj_t*)id(wifi_status), lv_color_hex(0xFF5722), 0);  // Red
-            }
-          }
           
           uint8_t data;
           
