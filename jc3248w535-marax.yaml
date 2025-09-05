@@ -136,6 +136,14 @@ interval:
                 static bool flash_state = false;
                 uint32_t now = millis();
                 
+                // Check if timer reset was requested
+                if (id(timer_reset_requested)) {
+                    timer_start = now;
+                    timer_running = false;
+                    flash_state = false;
+                    id(timer_reset_requested) = false;  // Clear the flag
+                }
+                
                 // Start timer when demo mode is enabled
                 if (!timer_running) {
                     timer_start = now;
