@@ -59,6 +59,9 @@ lvgl:
               - logger.log:
                   format: "Demo mode toggled: %s"
                   args: ['id(demo_mode_enabled) ? "ON" : "OFF"']
+              - globals.set:
+                  id: timer_reset_requested
+                  value: 'true'
               - if:
                   condition:
                     lambda: 'return !id(demo_mode_enabled);'  # If demo mode was turned OFF
