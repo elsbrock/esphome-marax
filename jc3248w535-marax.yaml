@@ -95,9 +95,9 @@ display:
       ignore_strapping_warning: true
     auto_clear_enabled: false
 
-# Time update interval
+# Time update interval (reduced frequency for time display)
 interval:
-  - interval: 1s
+  - interval: 5s  # Reduced from 1s - clock doesn't need to update every second
     then:
       - lvgl.label.update:
           id: time_display
@@ -107,7 +107,7 @@ interval:
               return time.strftime("%H:%M").c_str();
             }
             return "--:--";
-      # Update UART status based on demo mode
+      # Update UART status based on demo mode (less frequent)
       - if:
           condition:
             lambda: 'return id(demo_mode_enabled);'
@@ -121,9 +121,11 @@ interval:
                 id: uart_status  
                 text: "\U000F08BF"  # No signal icon when no data
                 text_color: 0xFF9800  # Orange for no data
-      # Generate demo data when enabled with dynamic resolution
+  # Demo data generation (optimized timing)
+  - interval: 2s  # Reduced from calling every 1s
+    then:
       - lambda: |-
-          // Always call generate_test_data - it handles timing internally
+          // Call generate_test_data with reduced frequency for better performance
           generate_test_data(false);
   # Timer update interval (100ms for smooth timer)
   - interval: 100ms

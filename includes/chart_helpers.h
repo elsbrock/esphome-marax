@@ -43,15 +43,21 @@ bool demo_is_brewing() {
     return demo_brewing_active;
 }
 
-// Generate realistic Mara X protocol strings (only in demo mode)
+// Generate realistic Mara X protocol strings (only in demo mode) - OPTIMIZED
 void generate_test_data(bool uart_connected) {
     // Only generate test data if demo mode is enabled and no real UART connection
     if (uart_connected || !id(demo_mode_enabled)) return;
     
     static uint32_t last_update = 0;
+    static uint32_t last_ui_update = 0;  // Separate timing for UI updates
     static uint32_t sequence_counter = 840; // Start at typical sequence value
     static bool heating_cycle = false;
     static uint32_t cycle_start = 0;
+    
+    // Cache for last values to avoid unnecessary UI updates
+    static float last_steam = -1, last_target = -1, last_hx = -1;
+    static int last_heat = -1, last_pump = -1;
+    static std::string last_status_text = "";
     
     uint32_t now = millis();
 
@@ -64,7 +70,7 @@ void generate_test_data(bool uart_connected) {
     
     uint32_t update_interval = 5000;  // Default 5s interval
     if (globals_ready) {
-        update_interval = id(high_res_chart) ? 1000 : 5000;  // 1s or 5s
+        update_interval = id(high_res_chart) ? 1000 : 5000;  // 1s or 5s (restored 1s for high-res mode)
     }
     
     if (now - last_update > update_interval) {
@@ -147,29 +153,61 @@ void generate_test_data(bool uart_connected) {
             // Add to chart through normal data flow
             add_temp_data(steam_val, hx_val, target_val);
             
-            // Update display labels with color coding
-            lv_label_set_text(&id(steam_temp_display), str_sprintf("%.0f°C", steam_val).c_str());
-            // Steam temp colors: Red >115°C, Yellow 90-115°C, Gray <90°C
-            if (steam_val > 115) {
-                lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF5722), 0);  // Red
-            } else if (steam_val > 90) {
-                lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
-            } else {
-                lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0x555555), 0);  // Gray
-            }
-            
-            lv_label_set_text(&id(target_temp_display), str_sprintf("%.0f°C", target_val).c_str());
-            // Target temp always green (it's the reference)
-            lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
-            
-            lv_label_set_text(&id(hx_temp_display), str_sprintf("%.0f°C", hx_val).c_str());
-            // HX/Brew temp colors: Green 88-96°C, Yellow 85-88/96-100°C, Red outside
-            if (hx_val >= 88 && hx_val <= 96) {
-                lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
-            } else if ((hx_val >= 85 && hx_val < 88) || (hx_val > 96 && hx_val <= 100)) {
-                lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
-            } else {
-                lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+            // UI UPDATE OPTIMIZATION: Only update if values changed significantly (>1°C)
+            // or enough time has passed (throttle UI updates to every 1s minimum)
+            bool should_update_ui = (now - last_ui_update > 1000) || 
+                                  (abs(steam_val - last_steam) > 1.0f) ||
+                                  (abs(target_val - last_target) > 1.0f) ||
+                                  (abs(hx_val - last_hx) > 1.0f) ||
+                                  (heat_status != last_heat) ||
+                                  (pump_active != last_pump);
+                                  
+            if (should_update_ui) {
+                // Batch UI updates to reduce LVGL blocking time
+                
+                // Cache string formatting to avoid repeated sprintf calls
+                static char steam_text[12], target_text[12], hx_text[12];
+                sprintf(steam_text, "%.0f°C", steam_val);
+                sprintf(target_text, "%.0f°C", target_val);
+                sprintf(hx_text, "%.0f°C", hx_val);
+                
+                // Update temperature displays
+                lv_label_set_text(&id(steam_temp_display), steam_text);
+                lv_label_set_text(&id(target_temp_display), target_text);
+                lv_label_set_text(&id(hx_temp_display), hx_text);
+                
+                // Update colors only if temperature value changed significantly
+                if (abs(steam_val - last_steam) > 1.0f) {
+                    if (steam_val > 115) {
+                        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+                    } else if (steam_val > 90) {
+                        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
+                    } else {
+                        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0x555555), 0);  // Gray
+                    }
+                }
+                
+                // Target temp always green (only set once per significant change)
+                if (abs(target_val - last_target) > 1.0f) {
+                    lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
+                }
+                
+                // HX temp colors (only update on significant change)
+                if (abs(hx_val - last_hx) > 1.0f) {
+                    if (hx_val >= 88 && hx_val <= 96) {
+                        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
+                    } else if ((hx_val >= 85 && hx_val < 88) || (hx_val > 96 && hx_val <= 100)) {
+                        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
+                    } else {
+                        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+                    }
+                }
+                
+                // Cache values
+                last_steam = steam_val;
+                last_target = target_val;
+                last_hx = hx_val;
+                last_ui_update = now;
             }
             
             // Timer control for demo mode based on pump status changes
@@ -186,53 +224,73 @@ void generate_test_data(bool uart_connected) {
                 demo_last_pump_status = pump_active;
             }
             
-            // Update status indicators
-            if (heat_status == 1) {
-                lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
-                lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0xFF5722), 0);
-            } else {
-                lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
-                lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0x555555), 0);
+            // OPTIMIZED STATUS UPDATES: Only update when state actually changes
+            if (heat_status != last_heat) {
+                if (heat_status == 1) {
+                    lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+                    lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0xFF5722), 0);
+                } else {
+                    lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+                    lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0x555555), 0);
+                }
+                last_heat = heat_status;
             }
             
-            if (pump_active == 1) {
-                lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
-                lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
-            } else {
-                lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
-                lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
+            if (pump_active != last_pump) {
+                if (pump_active == 1) {
+                    lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
+                    lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
+                } else {
+                    lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
+                    lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
+                }
+                last_pump = pump_active;
             }
             
-            
-            // Show "TEST MODE" in machine status when in test mode
+            // OPTIMIZED STATUS DISPLAY: Reduce blinking frequency and batch updates
             static uint32_t last_blink = 0;
             static bool blink_state = true;
             
-            // Blink "TEST MODE" every 1 second to distinguish from real data
-            if (now - last_blink > 1000) {
+            // Reduced blink frequency from 1s to 2s for better performance
+            if (now - last_blink > 2000) {
+                std::string new_status_text;
+                uint32_t new_status_color;
+                
                 if (blink_state) {
                     // Show actual status (READY/HEATING UP/BREWING) 
                     if (pump_active == 1) {
-                        lv_label_set_text(&id(machine_status), "BREWING");
-                        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0x2196F3), 0);
+                        new_status_text = "BREWING";
+                        new_status_color = 0x2196F3;
                     } else if (heat_status == 1) {
-                        lv_label_set_text(&id(machine_status), "HEATING UP");
-                        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0xFF9800), 0);
+                        new_status_text = "HEATING UP";
+                        new_status_color = 0xFF9800;
                     } else {
-                        lv_label_set_text(&id(machine_status), "READY");
-                        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0x4CAF50), 0);
+                        new_status_text = "READY";
+                        new_status_color = 0x4CAF50;
                     }
                 } else {
                     // Alternate with "TEST MODE"
-                    lv_label_set_text(&id(machine_status), "TEST MODE");
-                    lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(0xFFC107), 0);  // Amber
+                    new_status_text = "TEST MODE";
+                    new_status_color = 0xFFC107;  // Amber
                 }
+                
+                // Only update if text changed
+                if (new_status_text != last_status_text) {
+                    lv_label_set_text(&id(machine_status), new_status_text.c_str());
+                    lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(new_status_color), 0);
+                    last_status_text = new_status_text;
+                }
+                
                 blink_state = !blink_state;
                 last_blink = now;
             }
             
-            // Update version display
-            lv_label_set_text(&id(version_display), "V1.06");
+            // Version display - set once only (moved outside frequent update loop)
+            static bool version_set = false;
+            if (!version_set) {
+                lv_label_set_text(&id(version_display), "V1.06");
+                version_set = true;
+            }
             
             
             ESP_LOGD("test_data", "Generated: Steam=%.0f Target=%.0f HX=%.0f Heat=%d Pump=%d", 
@@ -245,37 +303,83 @@ void generate_test_data(bool uart_connected) {
     // Timer is now updated separately via 100ms interval in main config
 }
 
-// Add temperature data point with incremental update
+// HEAVILY OPTIMIZED chart updates - minimal LVGL blocking
 void add_temp_data(float steam, float hx, float target) {
+    // Store data first
     steam_temps[data_index] = steam;
     hx_temps[data_index] = hx;
     target_temps[data_index] = target;
     data_timestamps[data_index] = millis();
+    
+    // Incremental min/max tracking (avoid expensive range scans)
+    static float running_min = 999.0f, running_max = 0.0f;
+    static bool min_max_initialized = false;
+    
+    if (!min_max_initialized) {
+        running_min = min(min(steam, hx), target);
+        running_max = max(max(steam, hx), target);
+        min_max_initialized = true;
+    } else {
+        // Update running min/max incrementally
+        float current_min = min(min(steam, hx), target);
+        float current_max = max(max(steam, hx), target);
+        running_min = min(running_min, current_min);
+        running_max = max(running_max, current_max);
+    }
 
-    // Incremental chart update - only add new point instead of full rebuild
+    // CRITICAL OPTIMIZATION: Defer chart updates to reduce stutter
     if (temp_chart != nullptr) {
-        lv_chart_set_next_value(temp_chart, steam_series, (int32_t)steam);
-        lv_chart_set_next_value(temp_chart, hx_series, (int32_t)hx);
-        lv_chart_set_next_value(temp_chart, target_series, (int32_t)target);
+        static int chart_update_counter = 0;
+        static int pending_updates = 0;
+        static float pending_steam[3], pending_hx[3], pending_target[3];
         
-        // Only recalculate range and refresh every 10 data points or on significant changes
-        static int update_counter = 0;
-        static float last_min = 0, last_max = 0;
+        // Buffer up to 3 data points before batch updating chart
+        pending_steam[pending_updates] = steam;
+        pending_hx[pending_updates] = hx;
+        pending_target[pending_updates] = target;
+        pending_updates++;
         
-        update_counter++;
-        if (update_counter >= 10) {
-            float min_temp, max_temp;
-            get_temp_range(min_temp, max_temp);
-            
-            // Only update range if it changed significantly (>5°C difference)
-            if (abs((int)(min_temp - last_min)) > 5 || abs((int)(max_temp - last_max)) > 5) {
-                lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
-                last_min = min_temp;
-                last_max = max_temp;
+        chart_update_counter++;
+        
+        // BATCH UPDATE: Only update chart every 3rd data point to reduce blocking
+        if (pending_updates >= 3 || chart_update_counter >= 6) {
+            // Apply all pending updates in one batch
+            for (int i = 0; i < pending_updates; i++) {
+                lv_chart_set_next_value(temp_chart, steam_series, (int32_t)pending_steam[i]);
+                lv_chart_set_next_value(temp_chart, hx_series, (int32_t)pending_hx[i]);
+                lv_chart_set_next_value(temp_chart, target_series, (int32_t)pending_target[i]);
             }
             
-            lv_chart_refresh(temp_chart);
-            update_counter = 0;
+            pending_updates = 0;  // Reset buffer
+            
+            // RANGE UPDATE: Much less frequent, only every 40 data points
+            static float last_min = 0, last_max = 0;
+            if (chart_update_counter >= 40) {
+                // Use incremental min/max instead of expensive range scan
+                float padded_min = running_min - (running_max - running_min) * 0.1f;
+                float padded_max = running_max + (running_max - running_min) * 0.1f;
+                
+                // Clamp to reasonable bounds
+                if (padded_min < 0) padded_min = 0;
+                if (padded_max > 200) padded_max = 200;
+                
+                // Only update range if it changed significantly (>10°C for even less updates)
+                if (abs((int)(padded_min - last_min)) > 10 || abs((int)(padded_max - last_max)) > 10) {
+                    lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)padded_min, (int32_t)padded_max);
+                    last_min = padded_min;
+                    last_max = padded_max;
+                    
+                    // Only refresh when range actually changes - most expensive operation
+                    lv_chart_refresh(temp_chart);
+                }
+                
+                chart_update_counter = 0;
+                
+                // Reset running min/max periodically to avoid drift
+                running_min = 999.0f;
+                running_max = 0.0f;
+                min_max_initialized = false;
+            }
         }
     }
 
@@ -283,19 +387,25 @@ void add_temp_data(float steam, float hx, float target) {
     if (data_index == 0) data_filled = true;
 }
 
-// Find min/max values for auto-scaling
+// OPTIMIZED min/max calculation - only used for full rebuilds now
 void get_temp_range(float& min_temp, float& max_temp) {
     min_temp = 999.0f;
     max_temp = 0.0f;
 
     int points = data_filled ? CHART_DATA_POINTS : data_index;
+    
+    // Unroll loop for better performance - process 3 temps at once
     for (int i = 0; i < points; i++) {
-        if (steam_temps[i] < min_temp) min_temp = steam_temps[i];
-        if (steam_temps[i] > max_temp) max_temp = steam_temps[i];
-        if (hx_temps[i] < min_temp) min_temp = hx_temps[i];
-        if (hx_temps[i] > max_temp) max_temp = hx_temps[i];
-        if (target_temps[i] < min_temp) min_temp = target_temps[i];
-        if (target_temps[i] > max_temp) max_temp = target_temps[i];
+        float steam_val = steam_temps[i];
+        float hx_val = hx_temps[i];
+        float target_val = target_temps[i];
+        
+        // Find min/max in this data point
+        float point_min = (steam_val < hx_val) ? ((steam_val < target_val) ? steam_val : target_val) : ((hx_val < target_val) ? hx_val : target_val);
+        float point_max = (steam_val > hx_val) ? ((steam_val > target_val) ? steam_val : target_val) : ((hx_val > target_val) ? hx_val : target_val);
+        
+        if (point_min < min_temp) min_temp = point_min;
+        if (point_max > max_temp) max_temp = point_max;
     }
 
     // Add some padding

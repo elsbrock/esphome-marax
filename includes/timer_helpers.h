@@ -33,7 +33,7 @@ void stop_timer() {
     timer_running = false;
 }
 
-// Update timer display with optimized string formatting
+// PERFORMANCE OPTIMIZED timer display with minimal LVGL calls
 void update_timer_display(lv_obj_t* timer_label) {
     if (!timer_running) {
         return;
@@ -48,12 +48,16 @@ void update_timer_display(lv_obj_t* timer_label) {
     // Cache formatted strings to reduce string operations
     static char timer_text[16];
     static uint32_t last_update_ms = 0;
+    static uint32_t last_decisecond = 999;  // Force initial update
     
-    // Only update string if deciseconds changed (reduce sprintf calls)
-    if (elapsed_ms / 100 != last_update_ms / 100) {
+    uint32_t current_decisecond = elapsed_ms / 100;
+    
+    // Only update string if deciseconds actually changed (reduce sprintf calls)
+    if (current_decisecond != last_decisecond) {
         sprintf(timer_text, "%02d:%02d.%01d", minutes, seconds, deciseconds);
         lv_label_set_text(timer_label, timer_text);
         last_update_ms = elapsed_ms;
+        last_decisecond = current_decisecond;
     }
     
     // Handle flash mode (30-33s window)
