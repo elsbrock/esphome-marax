@@ -6,6 +6,9 @@ globals:
   - id: high_res_chart
     type: bool
     initial_value: 'false'  # false = 5s resolution, true = 1s resolution
+  - id: timer_reset_requested
+    type: bool
+    initial_value: 'false'
 
 # Sensors for Mara X temperature data
 sensor:
@@ -41,7 +44,7 @@ text_sensor:
     ssid:
       name: "Connected SSID"
       id: wifi_ssid
-  
+
   - platform: template
     id: mara_raw_data
     name: "Mara X Raw Data"
