@@ -41,13 +41,7 @@ text_sensor:
     ssid:
       name: "Connected SSID"
       id: wifi_ssid
-
-# WiFi connection status
-binary_sensor:
-  - platform: status
-    name: "WiFi Connection"
-    id: wifi_connected
-
+  
   - platform: template
     id: mara_raw_data
     name: "Mara X Raw Data"
@@ -59,3 +53,19 @@ binary_sensor:
   - platform: template
     id: mara_version
     name: "Mara X Version"
+
+# WiFi connection status
+binary_sensor:
+  - platform: status
+    name: "WiFi Connection"
+    id: wifi_connected
+    on_press:
+      - lambda: |-
+          ESP_LOGI("wifi", "WiFi connected - updating icon to green");
+          lv_label_set_text((lv_obj_t*)id(wifi_status), "\U000F05A9");  // Connected icon
+          lv_obj_set_style_text_color((lv_obj_t*)id(wifi_status), lv_color_hex(0x4CAF50), 0);  // Green
+    on_release:
+      - lambda: |-
+          ESP_LOGI("wifi", "WiFi disconnected - updating icon to orange");
+          lv_label_set_text((lv_obj_t*)id(wifi_status), "\U000F16B5");  // Alert icon
+          lv_obj_set_style_text_color((lv_obj_t*)id(wifi_status), lv_color_hex(0xFF9800), 0);  // Orange
