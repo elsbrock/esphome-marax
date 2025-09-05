@@ -141,10 +141,8 @@ interval:
                     id(timer_reset_requested) = false;  // Clear the flag
                 }
                 
-                // Start timer when demo mode is enabled
-                start_timer();
-                
-                // Update timer display with optimized logic
+                // Timer is now controlled by the state machine in generate_test_data()
+                // Only update timer display when demo mode is active
                 update_timer_display((lv_obj_t*)id(brew_timer));
           else:
             - lvgl.label.update:
