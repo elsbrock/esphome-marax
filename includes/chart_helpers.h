@@ -48,9 +48,10 @@ void generate_test_data(bool uart_connected) {
     // Only generate test data if demo mode is enabled and no real UART connection
     if (uart_connected || !id(demo_mode_enabled)) return;
     
-    static uint32_t last_update = 0;
-    static uint32_t last_ui_update = 0;  // Separate timing for UI updates
-    static uint32_t sequence_counter = 840; // Start at typical sequence value
+    static uint32_t last_protocol_update = 0;  // When we last generated new protocol data
+    static uint32_t last_chart_update = 0;     // When we last added data to chart
+    static uint32_t last_ui_update = 0;        // Separate timing for UI updates
+    static uint32_t sequence_counter = 840;    // Start at typical sequence value
     static bool heating_cycle = false;
     static uint32_t cycle_start = 0;
     
@@ -58,6 +59,10 @@ void generate_test_data(bool uart_connected) {
     static float last_steam = -1, last_target = -1, last_hx = -1;
     static int last_heat = -1, last_pump = -1;
     static std::string last_status_text = "";
+    
+    // Current temperature values (persist between calls)
+    static float current_steam = 118, current_target = 94, current_hx = 88;
+    static int current_heat = 0, current_pump = 0;
     
     uint32_t now = millis();
 
@@ -68,12 +73,17 @@ void generate_test_data(bool uart_connected) {
         globals_ready = (millis() > 5000);  // Wait 5 seconds after boot
     }
     
-    uint32_t update_interval = 5000;  // Default 5s interval
+    // Protocol data generation interval (actual sensor data simulation)
+    uint32_t protocol_interval = 5000;  // Generate new sensor readings every 5s
+    
+    // Chart data interval (how often we add points to chart)
+    uint32_t chart_interval = 5000;  // Default 5s
     if (globals_ready) {
-        update_interval = id(high_res_chart) ? 1000 : 5000;  // 1s or 5s (restored 1s for high-res mode)
+        chart_interval = id(high_res_chart) ? 1000 : 5000;  // 1s or 5s for chart updates
     }
     
-    if (now - last_update > update_interval) {
+    // STEP 1: Generate new protocol data every 5 seconds (simulate sensor readings)
+    if (now - last_protocol_update > protocol_interval) {
         float time_offset = now / 20000.0f;  // Slower variation
         
         // Realistic temperature simulation with heating cycles
@@ -150,8 +160,12 @@ void generate_test_data(bool uart_connected) {
             float target_val = std::stof(parts[2]);
             float hx_val = std::stof(parts[3]);
             
-            // Add to chart through normal data flow
-            add_temp_data(steam_val, hx_val, target_val);
+            // Update current values for chart and UI
+            current_steam = steam_val;
+            current_target = target_val;
+            current_hx = hx_val;
+            current_heat = heat_status;
+            current_pump = pump_active;
             
             // UI UPDATE OPTIMIZATION: Only update if values changed significantly (>1°C)
             // or enough time has passed (throttle UI updates to every 1s minimum)
@@ -297,7 +311,14 @@ void generate_test_data(bool uart_connected) {
                      steam_val, target_val, hx_val, heat_status, pump_active);
         }
         
-        last_update = now;
+        last_protocol_update = now;
+    }
+    
+    // STEP 2: Add data to chart at appropriate intervals (1s for high-res, 5s for normal)
+    if (now - last_chart_update > chart_interval) {
+        // Add current temperature values to chart
+        add_temp_data(current_steam, current_hx, current_target);
+        last_chart_update = now;
     }
     
     // Timer is now updated separately via 100ms interval in main config
