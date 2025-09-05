@@ -205,17 +205,17 @@ lvgl:
                   id: heating_status
                   align: TOP_LEFT
                   x: 0
-                  y: 255
+                  y: 250
                   text: "\U000F1A45 HEAT"
-                  text_font: small_font
+                  text_font: default_font
                   text_color: 0x333333
               - label:
                   id: pump_status
                   align: TOP_LEFT
-                  x: 55
-                  y: 255
+                  x: 68
+                  y: 250
                   text: "\U000F1B22 PUMP"
-                  text_font: small_font
+                  text_font: default_font
                   text_color: 0x333333
 
         # Right column (3/4) - Temperature Chart
