@@ -59,6 +59,11 @@ lvgl:
               - logger.log:
                   format: "Demo mode toggled: %s"
                   args: ['id(demo_mode_enabled) ? "ON" : "OFF"']
+              - lambda: |-
+                  // Reset state machine when demo mode is enabled
+                  if (id(demo_mode_enabled)) {
+                    demo_reset_state_machine();
+                  }
               - globals.set:
                   id: timer_reset_requested
                   value: 'true'
