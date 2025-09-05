@@ -10,6 +10,18 @@ interval:
           static bool test_mode_active = false;  // Track if we're showing test data
           static int last_pump_status = -1;  // Track pump status changes for timer control
           
+          // Check post-brew timer for automatic resolution switch back to normal
+          if (id(post_brew_timer) > 0 && id(high_res_chart)) {
+            uint32_t elapsed = now - id(post_brew_timer);
+            if (elapsed >= 30000) {  // 30 seconds
+              id(high_res_chart) = false;
+              id(post_brew_timer) = 0;  // Reset timer
+              ESP_LOGI("marax", "Post-brew delay complete - switched back to normal resolution");
+              // Force chart recreation with new resolution
+              recreate_temp_chart(&id(graph_area));
+            }
+          }
+          
           
           uint8_t data;
           
@@ -103,16 +115,22 @@ interval:
                   int heat_status = std::stoi(parts[5]);
                   int pump_status = std::stoi(parts[6]);
                   
-                  // Timer control based on pump status changes
+                  // Timer control and automatic high-res mode based on pump status changes
                   if (last_pump_status != pump_status) {
                     if (pump_status == 1 && last_pump_status == 0) {
-                      // Pump started - start timer
+                      // Pump started - start timer and switch to high-res mode
                       start_timer();
-                      ESP_LOGI("marax", "Brew started - timer started");
+                      id(high_res_chart) = true;
+                      ESP_LOGI("marax", "Brew started - timer started, switched to high-res mode");
+                      // Force chart recreation with new resolution
+                      recreate_temp_chart(&id(graph_area));
                     } else if (pump_status == 0 && last_pump_status == 1) {
-                      // Pump stopped - stop timer
+                      // Pump stopped - stop timer and return to normal resolution after delay
                       stop_timer();
-                      ESP_LOGI("marax", "Brew stopped - timer stopped");
+                      ESP_LOGI("marax", "Brew stopped - timer stopped, will return to normal resolution in 30s");
+                      // Schedule return to normal resolution after 30 seconds
+                      // This allows user to see the high-res brewing data for a while
+                      id(post_brew_timer) = millis();
                     }
                     last_pump_status = pump_status;
                   }
