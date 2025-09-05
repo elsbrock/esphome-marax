@@ -38,8 +38,8 @@ interval:
             lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1B22 PUMP");
             lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x333333), 0);
             
-            // Update UART status
-            lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F065C UART");
+            // Update UART status to show no signal
+            lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F08BF");
             lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0xFF5722), 0);
             
             ESP_LOGW("marax", "UART connection lost - no data for 5+ seconds");
@@ -160,7 +160,7 @@ interval:
                   }
                   
                   // Update UART status to connected
-                  lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F065C UART");
+                  lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F04A2");
                   lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0x4CAF50), 0);
                   
                   // Update version from first part (e.g., "C1.06")
