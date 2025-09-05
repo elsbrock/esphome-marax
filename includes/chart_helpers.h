@@ -1,5 +1,6 @@
 #pragma once
 #include "esphome.h"
+#include "timer_helpers.h"
 
 // Temperature data storage
 #define CHART_DATA_POINTS 60  // 5 minutes at 5s intervals OR 1 minute at 1s intervals
@@ -24,6 +25,24 @@ void update_chart_grid(float temp_range);
 void recreate_temp_chart(lv_obj_t* parent);
 void clear_chart_data();
 
+// Demo mode brew state management
+static bool demo_brewing_active = false;
+static uint32_t demo_brew_start_time = 0;
+static int demo_last_pump_status = -1;
+
+void demo_start_brew_cycle() {
+    demo_brewing_active = true;
+    demo_brew_start_time = millis();
+}
+
+void demo_stop_brew_cycle() {
+    demo_brewing_active = false;
+}
+
+bool demo_is_brewing() {
+    return demo_brewing_active;
+}
+
 // Generate realistic Mara X protocol strings (only in demo mode)
 void generate_test_data(bool uart_connected) {
     // Only generate test data if demo mode is enabled and no real UART connection
@@ -32,10 +51,7 @@ void generate_test_data(bool uart_connected) {
     static uint32_t last_update = 0;
     static uint32_t sequence_counter = 840; // Start at typical sequence value
     static bool heating_cycle = false;
-    static bool brewing_cycle = false;
     static uint32_t cycle_start = 0;
-    static uint32_t timer_start = 0;  // Timer for brew timing
-    static bool timer_running = false;
     
     uint32_t now = millis();
 
@@ -64,17 +80,18 @@ void generate_test_data(bool uart_connected) {
             cycle_start = now;
             
             // Start brewing cycle randomly during non-heating periods
-            if (!heating_cycle && (now % 60000) < 5000) {
-                brewing_cycle = true;
+            if (!heating_cycle && !demo_brewing_active && (now % 60000) < 5000) {
+                demo_start_brew_cycle();
             }
         }
         
-        // End brewing cycle after 25 seconds
-        if (brewing_cycle && (now - cycle_start > 25000)) {
-            brewing_cycle = false;
+        // Check for manual brew stop (simulate user stopping brew after random time 15-45s)
+        if (demo_brewing_active && (now - demo_brew_start_time > (15000 + (now % 30000)))) {
+            demo_stop_brew_cycle();
         }
         
-        if (brewing_cycle) {
+        
+        if (demo_brewing_active) {
             // Brewing: temperatures drop, pump active
             steam_temp = 110 + 8 * sin(time_offset * 2);
             hx_temp = 88 + 5 * sin(time_offset * 2 + 1);
@@ -82,11 +99,6 @@ void generate_test_data(bool uart_connected) {
             heat_status = 1;  // Heating to compensate
             pump_active = 1;  // Pump active
             
-            // Start timer when brewing starts
-            if (!timer_running) {
-                timer_start = now;
-                timer_running = true;
-            }
         } else if (heating_cycle) {
             // Heating up: temperatures rising
             steam_temp = 115 + 12 * sin(time_offset);
@@ -158,6 +170,20 @@ void generate_test_data(bool uart_connected) {
                 lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
             } else {
                 lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+            }
+            
+            // Timer control for demo mode based on pump status changes
+            if (demo_last_pump_status != pump_active) {
+                if (pump_active == 1 && demo_last_pump_status == 0) {
+                    // Pump started - start timer
+                    start_timer();
+                    ESP_LOGI("demo", "Demo brew started - timer started");
+                } else if (pump_active == 0 && demo_last_pump_status == 1) {
+                    // Pump stopped - stop timer
+                    stop_timer();
+                    ESP_LOGI("demo", "Demo brew stopped - timer stopped");
+                }
+                demo_last_pump_status = pump_active;
             }
             
             // Update status indicators

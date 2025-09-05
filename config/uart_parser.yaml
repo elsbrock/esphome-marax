@@ -8,6 +8,7 @@ interval:
           static uint32_t last_data_time = 0;
           static bool connected = false;
           static bool test_mode_active = false;  // Track if we're showing test data
+          static int last_pump_status = -1;  // Track pump status changes for timer control
           
           
           uint8_t data;
@@ -19,6 +20,11 @@ interval:
           if (connected && (now - last_data_time) > 5000) {
             // Connection lost - show disconnected state
             connected = false;
+            
+            // Stop timer when connection is lost
+            stop_timer();
+            last_pump_status = -1;  // Reset pump status tracking
+            ESP_LOGI("marax", "UART disconnected - timer stopped");
             
             // Update display with N/A values
             lv_label_set_text((lv_obj_t*)id(steam_temp_display), "--°C");
@@ -96,6 +102,20 @@ interval:
                   float hx_temp_val = std::stof(parts[3]);
                   int heat_status = std::stoi(parts[5]);
                   int pump_status = std::stoi(parts[6]);
+                  
+                  // Timer control based on pump status changes
+                  if (last_pump_status != pump_status) {
+                    if (pump_status == 1 && last_pump_status == 0) {
+                      // Pump started - start timer
+                      start_timer();
+                      ESP_LOGI("marax", "Brew started - timer started");
+                    } else if (pump_status == 0 && last_pump_status == 1) {
+                      // Pump stopped - stop timer
+                      stop_timer();
+                      ESP_LOGI("marax", "Brew stopped - timer stopped");
+                    }
+                    last_pump_status = pump_status;
+                  }
                   
                   // Update sensors
                   id(steam_temp).publish_state(steam_temp_val);
