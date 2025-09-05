@@ -17,9 +17,10 @@ static lv_chart_series_t* hx_series = nullptr;
 static lv_chart_series_t* target_series = nullptr;
 
 // Forward declarations
+void get_temp_range(float& min_temp, float& max_temp);
 void update_temp_chart();
 void add_temp_data(float steam, float hx, float target);
-void update_chart_labels();
+void update_chart_grid(float temp_range);
 void recreate_temp_chart(lv_obj_t* parent);
 void clear_chart_data();
 
@@ -222,20 +223,42 @@ void generate_test_data(bool uart_connected) {
     // Timer is now updated separately via 100ms interval in main config
 }
 
-// Add temperature data point
+// Add temperature data point with incremental update
 void add_temp_data(float steam, float hx, float target) {
     steam_temps[data_index] = steam;
     hx_temps[data_index] = hx;
     target_temps[data_index] = target;
     data_timestamps[data_index] = millis();
 
+    // Incremental chart update - only add new point instead of full rebuild
+    if (temp_chart != nullptr) {
+        lv_chart_set_next_value(temp_chart, steam_series, (int32_t)steam);
+        lv_chart_set_next_value(temp_chart, hx_series, (int32_t)hx);
+        lv_chart_set_next_value(temp_chart, target_series, (int32_t)target);
+        
+        // Only recalculate range and refresh every 10 data points or on significant changes
+        static int update_counter = 0;
+        static float last_min = 0, last_max = 0;
+        
+        update_counter++;
+        if (update_counter >= 10) {
+            float min_temp, max_temp;
+            get_temp_range(min_temp, max_temp);
+            
+            // Only update range if it changed significantly (>5°C difference)
+            if (abs((int)(min_temp - last_min)) > 5 || abs((int)(max_temp - last_max)) > 5) {
+                lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
+                last_min = min_temp;
+                last_max = max_temp;
+            }
+            
+            lv_chart_refresh(temp_chart);
+            update_counter = 0;
+        }
+    }
+
     data_index = (data_index + 1) % CHART_DATA_POINTS;
     if (data_index == 0) data_filled = true;
-
-    // Update chart if it exists
-    if (temp_chart != nullptr) {
-        update_temp_chart();
-    }
 }
 
 // Find min/max values for auto-scaling
@@ -264,7 +287,7 @@ void get_temp_range(float& min_temp, float& max_temp) {
     if (max_temp > 200) max_temp = 200;
 }
 
-// Update chart data with dynamic grid
+// Full chart rebuild - only used when needed (resolution change, clear, etc.)
 void update_temp_chart() {
     if (temp_chart == nullptr) return;
 
@@ -290,7 +313,15 @@ void update_temp_chart() {
     lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
     
     // Dynamic grid lines based on temperature range
-    float temp_range = max_temp - min_temp;
+    update_chart_grid(max_temp - min_temp);
+
+    lv_chart_refresh(temp_chart);
+}
+
+// Separate function for grid updates to avoid repeated calculations
+void update_chart_grid(float temp_range) {
+    if (temp_chart == nullptr) return;
+    
     int y_divs = 4;  // Default
     int x_divs = 6;  // Time divisions
     
@@ -305,8 +336,6 @@ void update_temp_chart() {
     }
     
     lv_chart_set_div_line_count(temp_chart, y_divs, x_divs);
-
-    lv_chart_refresh(temp_chart);
 }
 
 // Create temperature chart
