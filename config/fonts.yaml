@@ -28,7 +28,7 @@ font:
         ]
   - file: "gfonts://Roboto@700"
     id: temp_font
-    size: 32
+    size: 36
     bpp: 4
   - file: "gfonts://Roboto"
     id: small_font
