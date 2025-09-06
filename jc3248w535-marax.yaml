@@ -4,9 +4,15 @@ esphome:
   platformio_options:
     build_flags:
       - -D LV_USE_CHART=1
+      # Silence verbose debug logs in production
+      - -D MARAX_PRODUCTION=1
+      # Enable unused code warnings and treat warnings as errors
+      - -Wunused
+      - -Werror
   includes:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
+    - includes/chart_draw.h
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -121,11 +127,11 @@ interval:
                 id: uart_status  
                 text: "\U000F08BF"  # No signal icon when no data
                 text_color: 0xFF9800  # Orange for no data
-  # Demo data generation (optimized timing)
-  - interval: 2s  # Reduced from calling every 1s
+  # Demo data generation (400ms timing to match real Mara X UART frequency)
+  - interval: 400ms  # Match real Mara X UART frequency for realistic testing
     then:
       - lambda: |-
-          // Call generate_test_data with reduced frequency for better performance
+          // Generate test data at 400ms intervals like real Mara X
           generate_test_data(false);
   # Timer update interval (100ms for smooth timer)
   - interval: 100ms
@@ -145,13 +151,11 @@ interval:
                 // Only update timer display when demo mode is active
                 update_timer_display((lv_obj_t*)id(brew_timer));
           else:
-            - lvgl.label.update:
-                id: brew_timer
-                text: "00:00.0"
-                text_color: 0x555555  # Gray when stopped
             - lambda: |-
-                // Stop timer when demo mode is disabled
+                // Stop timer when demo mode is disabled, keep last value visible
                 stop_timer();
+                // Set timer color to neutral gray but do not reset text
+                set_timer_neutral((lv_obj_t*)id(brew_timer));
 
 # Include component configurations
 <<: !include config/display_ui.yaml
