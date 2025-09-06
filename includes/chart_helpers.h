@@ -1,26 +1,111 @@
 #pragma once
 #include "esphome.h"
+#include <math.h>
 #include "timer_helpers.h"
 
-// Dual-resolution temperature data storage for instant switching
-#define CHART_DATA_1S 50     // 50 seconds at 1s intervals (high-resolution)
-#define CHART_DATA_5S 60     // 5 minutes at 5s intervals (normal resolution) 
+// Optional: silence verbose logs for production builds
+#ifdef MARAX_PRODUCTION
+#  undef ESP_LOGD
+#  define ESP_LOGD(tag, fmt, ...) ((void)0)
+#  undef ESP_LOGV
+#  define ESP_LOGV(tag, fmt, ...) ((void)0)
+#endif
 
-// High-resolution storage (always collect at 1s)
-static float steam_temps_1s[CHART_DATA_1S];
-static float hx_temps_1s[CHART_DATA_1S];
-static float target_temps_1s[CHART_DATA_1S];
-static uint32_t timestamps_1s[CHART_DATA_1S];
+// Professional instrument design - Time-first approach
+// UART provides data every 400ms (2.5 Hz), we need to handle this properly
+
+// High resolution: 50 second window, 1s intervals = 50 points
+#define HIGH_RES_WINDOW_SEC  50
+#define HIGH_RES_INTERVAL_MS 1000
+#define HIGH_RES_POINTS      50
+
+// Low resolution: 15 minute window, 15s intervals = 60 points
+#define LOW_RES_WINDOW_SEC   900
+#define LOW_RES_INTERVAL_MS  15000
+#define LOW_RES_POINTS       60
+
+// Raw data buffer to handle 400ms UART data (2.5 Hz)
+#define RAW_DATA_BUFFER_SIZE 200  // ~80 seconds of raw data at 400ms intervals 
+
+// Adaptive recovery detection parameters
+#define RECOVERY_WINDOW_SEC          20    // analyze last N seconds at 1s resolution
+#define RECOVERY_MIN_SEC             20    // must wait at least this long after pump stop
+#define RECOVERY_MAX_DELTA_C         1.0f  // avg |HX-Target| within this
+#define RECOVERY_MAX_SLOPE_C_PER_SEC 0.04f // |d(HX)/dt| below this
+
+// Raw data buffer - captures all 400ms UART data
+struct RawTempData {
+    uint32_t timestamp;
+    float steam, hx, target;
+    int heat_status;
+    int pump_status;
+};
+
+static RawTempData raw_data[RAW_DATA_BUFFER_SIZE];
+static int raw_data_index = 0;
+static bool raw_data_filled = false;
+
+// Brew shading configuration and storage (keep small for 15m window)
+struct BrewEvent { uint32_t start_ms; uint32_t stop_ms; uint32_t recovered_ms; };
+static BrewEvent brew_events[10];
+static int brew_event_count = 0;
+
+inline void brew_event_start(uint32_t t) {
+    if (brew_event_count >= (int)(sizeof(brew_events)/sizeof(brew_events[0]))) {
+        for (int i = 1; i < brew_event_count; ++i) brew_events[i-1] = brew_events[i];
+        brew_event_count--;
+    }
+    brew_events[brew_event_count++] = {t, 0u, 0u};
+}
+
+inline void brew_event_stop(uint32_t t) {
+    if (brew_event_count == 0) return;
+    for (int i = brew_event_count - 1; i >= 0; --i) {
+        if (brew_events[i].stop_ms == 0 && brew_events[i].start_ms <= t) {
+            brew_events[i].stop_ms = t;
+            break;
+        }
+    }
+}
+
+inline void brew_event_recovered(uint32_t t) {
+    if (brew_event_count == 0) return;
+    for (int i = brew_event_count - 1; i >= 0; --i) {
+        if (brew_events[i].stop_ms > 0 && brew_events[i].recovered_ms == 0 && brew_events[i].start_ms <= t) {
+            brew_events[i].recovered_ms = t;
+            break;
+        }
+    }
+}
+
+inline int get_brew_event_count() { return brew_event_count; }
+inline const BrewEvent* get_brew_events() { return brew_events; }
+inline uint32_t get_recovery_ms() { return 90000u; } // 90s recovery
+inline uint32_t get_recovery_buffer_ms() { return 10000u; } // 10s buffer after recovery
+
+// Get most recent brew stop timestamp (0 if none)
+inline uint32_t get_last_brew_stop_ms() {
+    for (int i = brew_event_count - 1; i >= 0; --i) {
+        if (brew_events[i].stop_ms > 0) return brew_events[i].stop_ms;
+    }
+    return 0;
+}
+
+// High-resolution chart data (1s intervals, 60 points = 1 minute)
+static float steam_1s[HIGH_RES_POINTS];
+static float hx_1s[HIGH_RES_POINTS];
+static float target_1s[HIGH_RES_POINTS];
+static uint32_t timestamps_1s[HIGH_RES_POINTS];
 static int data_index_1s = 0;
 static bool data_filled_1s = false;
 
-// Downsampled storage for 5s view (generated from 1s data)
-static float steam_temps_5s[CHART_DATA_5S];
-static float hx_temps_5s[CHART_DATA_5S];
-static float target_temps_5s[CHART_DATA_5S];
-static uint32_t timestamps_5s[CHART_DATA_5S];
-static int data_index_5s = 0;
-static bool data_filled_5s = false;
+// Low-resolution chart data (15s intervals, 60 points = 15 minutes)
+static float steam_15s[LOW_RES_POINTS];
+static float hx_15s[LOW_RES_POINTS];
+static float target_15s[LOW_RES_POINTS];
+static uint32_t timestamps_15s[LOW_RES_POINTS];
+static int data_index_15s = 0;
+static bool data_filled_15s = false;
 
 // Remove unsafe macro - use helper functions instead
 
@@ -30,21 +115,70 @@ static lv_chart_series_t* steam_series = nullptr;
 static lv_chart_series_t* hx_series = nullptr;
 static lv_chart_series_t* target_series = nullptr;
 
-// Forward declarations
+// Forward declarations - Professional instrument interface
+void add_raw_uart_data(float steam, float hx, float target, int heat, int pump);
+void update_temperature_displays(float steam, float hx, float target, int heat, int pump);
+void process_chart_data();  // Convert raw data to chart resolution
+void update_chart_display();
 void get_temp_range(float& min_temp, float& max_temp);
-void update_temp_chart();
-void add_temp_data(float steam, float hx, float target);
-void update_5s_data_from_1s();  // Generate 5s view from 1s data
-float* get_current_steam_data();
-float* get_current_hx_data();
-float* get_current_target_data();
-int get_current_data_count();
-int get_current_data_index();
-void update_chart_grid(float temp_range);
-bool is_high_res_mode();  // Safe way to check resolution
-void update_chart_point_count();  // Update chart point count when resolution changes
+bool is_high_res_mode();
 void recreate_temp_chart(lv_obj_t* parent);
 void clear_chart_data();
+float get_averaged_temp_at_time(uint32_t target_time, uint32_t window_ms, int temp_type);
+
+// Determine if system has recovered based on recent high-res data
+bool has_recovered() {
+    // Only meaningful if we have some 1s data
+    int available = data_filled_1s ? HIGH_RES_POINTS : data_index_1s;
+    if (available < 5) return false;
+
+    uint32_t now = millis();
+    uint32_t window_ms = RECOVERY_WINDOW_SEC * 1000u;
+
+    // Adaptive thresholds: relax in demo mode so the state machine progresses
+    bool demo = id(demo_mode_enabled);
+    uint32_t min_sec = demo ? 12u : (uint32_t)RECOVERY_MIN_SEC;
+    float max_delta = demo ? 2.2f : RECOVERY_MAX_DELTA_C;
+    float max_slope = demo ? 0.08f : RECOVERY_MAX_SLOPE_C_PER_SEC;
+
+    // Enforce a minimum time since last brew stop
+    uint32_t last_stop = get_last_brew_stop_ms();
+    if (last_stop == 0 || (now - last_stop) < (min_sec * 1000u)) return false;
+
+    int considered = 0;
+    float sum_abs_delta = 0.0f;
+    uint32_t t_first = 0, t_last = 0;
+    float hx_first = 0.0f, hx_last = 0.0f;
+
+    for (int i = 0; i < available; i++) {
+        int idx = (data_index_1s - 1 - i + HIGH_RES_POINTS) % HIGH_RES_POINTS;
+        uint32_t ts = timestamps_1s[idx];
+        if (ts == 0 || (now - ts) > window_ms) break;
+        float hxv = hx_1s[idx];
+        float tgt = target_1s[idx];
+        if (hxv <= 0 || hxv > 200 || tgt <= 0 || tgt > 200) continue;
+        sum_abs_delta += fabsf(hxv - tgt);
+        if (considered == 0) {
+            t_last = ts; hx_last = hxv;
+        }
+        t_first = ts; hx_first = hxv;
+        considered++;
+    }
+
+    if (considered < RECOVERY_WINDOW_SEC - 2) return false;  // need enough points
+    uint32_t dur_ms = (t_last >= t_first) ? (t_last - t_first) : 0;
+    if (dur_ms < (RECOVERY_WINDOW_SEC - 2) * 1000u) return false;
+
+    float avg_abs = sum_abs_delta / (float)considered;
+    float slope = (dur_ms > 0) ? (hx_last - hx_first) / ((float)dur_ms / 1000.0f) : 0.0f;
+    if (avg_abs <= max_delta && fabsf(slope) <= max_slope) {
+        return true;
+    }
+    return false;
+}
+
+// Draw helpers (axis labels + shaded bands) — needs forward decls
+#include "chart_draw.h"
 
 // Demo mode state machine
 enum DemoState {
@@ -57,8 +191,12 @@ enum DemoState {
 static DemoState demo_state = DEMO_STARTUP;
 static uint32_t demo_state_start_time = 0;
 static uint32_t demo_brew_start_time = 0;
+static uint32_t demo_brew_stop_time = 0;
+static uint32_t demo_next_brew_at = 0;  // Schedule for next brew in READY state
 static int demo_last_pump_status = -1;
 static bool demo_state_initialized = false;
+static uint32_t demo_lowres_since = 0;   // When we actually returned to low-res
+static const uint32_t DEMO_IDLE_AFTER_LOWRES_MS = 4000; // visible low-res dwell
 
 // State transition functions
 void demo_transition_to_state(DemoState new_state) {
@@ -66,16 +204,22 @@ void demo_transition_to_state(DemoState new_state) {
         ESP_LOGI("demo", "State transition: %d -> %d", demo_state, new_state);
         demo_state = new_state;
         demo_state_start_time = millis();
+        // Reset next brew schedule on state transitions
+        if (new_state != DEMO_READY) {
+            demo_next_brew_at = 0;
+        }
     }
 }
 
 void demo_start_brew_cycle() {
     demo_transition_to_state(DEMO_BREWING);
     demo_brew_start_time = millis();
+    demo_lowres_since = 0; // reset low-res dwell tracker
 }
 
 void demo_stop_brew_cycle() {
     demo_transition_to_state(DEMO_READY);
+    demo_brew_stop_time = millis();
 }
 
 bool demo_is_brewing() {
@@ -91,6 +235,7 @@ void demo_reset_state_machine() {
     demo_state_start_time = millis();
     demo_state_initialized = true;
     demo_last_pump_status = -1;  // Reset pump status tracking
+    demo_next_brew_at = 0;
     
     // Stop timer when state machine resets
     stop_timer();
@@ -98,23 +243,16 @@ void demo_reset_state_machine() {
     ESP_LOGI("demo", "Demo state machine reset to STARTUP - timer stopped");
 }
 
-// Generate realistic Mara X protocol strings with state machine - OPTIMIZED
+// Professional instrument data generation - simulates real 400ms Mara X UART
 void generate_test_data(bool uart_connected) {
     // Only generate test data if demo mode is enabled and no real UART connection
     if (uart_connected || !id(demo_mode_enabled)) return;
     
-    static uint32_t last_protocol_update = 0;  // When we last generated new protocol data
-    static uint32_t last_chart_update = 0;     // When we last added data to chart
-    static uint32_t last_ui_update = 0;        // Separate timing for UI updates
-    static uint32_t sequence_counter = 840;    // Start at typical sequence value
-    
-    // Cache for last values to avoid unnecessary UI updates
-    static float last_steam = -1, last_target = -1, last_hx = -1;
-    static int last_heat = -1, last_pump = -1;
-    static std::string last_status_text = "";
+    static uint32_t last_data_generation = 0;
+    static uint32_t sequence_counter = 560;  // Countdown from Mara X description
     
     // Current temperature values (persist between calls)
-    static float current_steam = 25, current_target = 25, current_hx = 25;  // Start cold
+    static float current_steam = 25, current_target = 25, current_hx = 25;
     static int current_heat = 0, current_pump = 0;
     
     uint32_t now = millis();
@@ -124,34 +262,23 @@ void generate_test_data(bool uart_connected) {
         demo_reset_state_machine();
     }
 
-    // Generate new protocol data based on chart resolution
-    static bool globals_ready = false;
-    if (!globals_ready) {
-        // Check if globals are ready (avoid crash during startup)
-        globals_ready = (millis() > 5000);  // Wait 5 seconds after boot
-    }
+    // Generate data every 400ms to match real Mara X UART frequency
+    if (now - last_data_generation < 400) return;
     
-    // Protocol data generation interval (simulate sensor readings)
-    uint32_t protocol_interval = 2000;  // Generate new sensor readings every 2s for more responsive demo
+    last_data_generation = now;
     
-    // Chart data storage interval (when to save to our arrays)
-    uint32_t chart_interval = 5000;  // Default 5s
-    if (globals_ready) {
-        chart_interval = is_high_res_mode() ? 1000 : 5000;  // 1s in high-res, 5s in normal
-    }
-    
-    // STEP 1: Update state machine and generate protocol data
-    if (now - last_protocol_update > protocol_interval) {
-        uint32_t time_in_state = now - demo_state_start_time;
-        float steam_temp, target_temp, hx_temp;
-        int heat_status = 0, pump_active = 0;
+    // Generate realistic temperature data based on state machine
+    uint32_t time_in_state = now - demo_state_start_time;
+    float steam_temp, target_temp, hx_temp;
+    int heat_status = 0, pump_active = 0;
         
-        // State machine logic
-        switch (demo_state) {
+    // State machine logic
+    switch (demo_state) {
             case DEMO_STARTUP:
                 // Machine starting up - temperatures slowly rising from room temperature
                 {
-                    float progress = min(1.0f, time_in_state / 45000.0f);  // 45 seconds startup
+                    // Slightly longer initial warmup for realism (~60s)
+                    float progress = min(1.0f, time_in_state / 60000.0f);  // 60 seconds startup
                     steam_temp = 25 + (90 - 25) * progress;   // 25°C to 90°C
                     target_temp = 25 + (85 - 25) * progress;  // 25°C to 85°C  
                     hx_temp = 25 + (75 - 25) * progress;      // 25°C to 75°C
@@ -168,7 +295,8 @@ void generate_test_data(bool uart_connected) {
             case DEMO_HEATING_UP:
                 // Machine heating to operating temperature
                 {
-                    float progress = min(1.0f, time_in_state / 30000.0f);  // 30 seconds heating
+                    // Take ~5 minutes to ramp to operating temperature
+                    float progress = min(1.0f, time_in_state / 300000.0f);  // 300000 ms = 5 minutes
                     steam_temp = 90 + (118 - 90) * progress;   // 90°C to 118°C
                     target_temp = 85 + (96 - 85) * progress;   // 85°C to 96°C
                     hx_temp = 75 + (94 - 75) * progress;       // 75°C to 94°C
@@ -198,8 +326,33 @@ void generate_test_data(bool uart_connected) {
                     heat_status = (sin(time_offset * 3) > 0.7f) ? 1 : 0;  // Occasional heating to maintain temp
                     pump_active = 0;
                     
-                    // Start brewing after 15-25 seconds in ready state
-                    if (time_in_state > 15000 && (time_in_state + now) % 40000 < 2000) {
+                    // Schedule next brew only after we returned to low-res and idled visibly
+                    if (demo_next_brew_at == 0) {
+                        if (demo_brew_stop_time > 0) {
+                            bool rec = has_recovered();
+                            uint32_t last_stop = get_last_brew_stop_ms();
+                            uint32_t deadline = last_stop > 0 ? (last_stop + get_recovery_ms() + get_recovery_buffer_ms()) : 0;
+                            bool ready_to_consider = rec || (deadline > 0 && now >= deadline);
+                            bool lowres_active = !is_high_res_mode();
+                            if (ready_to_consider && lowres_active) {
+                                // Start dwell timer on first observation of low-res after recovery
+                                if (demo_lowres_since == 0) {
+                                    demo_lowres_since = now;
+                                    ESP_LOGD("demo", "Low-res active; starting dwell timer");
+                                }
+                                if (now - demo_lowres_since >= DEMO_IDLE_AFTER_LOWRES_MS) {
+                                    demo_next_brew_at = now; // start immediately after dwell
+                                    ESP_LOGD("demo", "Dwell complete; scheduling next brew now");
+                                }
+                            }
+                        } else {
+                            // First brew: small delay to let system warm/stabilize
+                            uint32_t jitter = 30000 + ((now * 2654435761u) % 30000);
+                            demo_next_brew_at = now + jitter;
+                            ESP_LOGD("demo", "Initial brew scheduled in %u ms", jitter);
+                        }
+                    } else if (now >= demo_next_brew_at) {
+                        demo_next_brew_at = 0;  // Clear before starting
                         demo_start_brew_cycle();
                     }
                 }
@@ -218,323 +371,300 @@ void generate_test_data(bool uart_connected) {
                     heat_status = 1;  // Heating to compensate for heat loss
                     pump_active = 1;  // Pump active
                     
-                    // Stop brewing after 20-35 seconds (random duration)
-                    uint32_t brew_duration = 20000 + ((now + demo_brew_start_time) % 15000);
+                    // Stop brewing after ~25-40 seconds (random duration)
+                    uint32_t brew_duration = 25000 + ((now + demo_brew_start_time) % 15000);
                     if (time_in_state > brew_duration) {
                         demo_stop_brew_cycle();
                     }
                 }
                 break;
-        }
-        
-        // Build protocol string: C1.06,steam,target,hx,sequence,heat,pump
-        sequence_counter = (sequence_counter + 1) % 10000;
-        std::string protocol_data = str_sprintf("C1.06,%03.0f,%03.0f,%03.0f,%04d,%d,%d\n",
-                                               steam_temp, target_temp, hx_temp, 
-                                               sequence_counter, heat_status, pump_active);
-        
-        // Inject protocol string into UART buffer for parsing
-        // This simulates receiving actual UART data
-        ESP_LOGD("test_data", "Injecting protocol: %s", protocol_data.c_str());
-        
-        // We can't directly inject into UART, so we'll call the parsing logic directly
-        // Parse the test data through the same logic used for real UART data
-        std::vector<std::string> parts;
-        std::string current = "";
-        
-        for (char c : protocol_data) {
-            if (c == ',' || c == '\n') {
-                parts.push_back(current);
-                current = "";
-            } else if (c != 'C' || !parts.empty()) {  // Skip initial 'C'
-                current += c;
-            }
-        }
-        
-        if (parts.size() >= 7) {
-            float steam_val = std::stof(parts[1]);
-            float target_val = std::stof(parts[2]);
-            float hx_val = std::stof(parts[3]);
-            
-            // Update current values for chart and UI
-            current_steam = steam_val;
-            current_target = target_val;
-            current_hx = hx_val;
-            current_heat = heat_status;
-            current_pump = pump_active;
-            
-            // UI UPDATE OPTIMIZATION: Only update if values changed significantly (>1°C)
-            // or enough time has passed (throttle UI updates to every 1s minimum)
-            bool should_update_ui = (now - last_ui_update > 1000) || 
-                                  (abs(steam_val - last_steam) > 1.0f) ||
-                                  (abs(target_val - last_target) > 1.0f) ||
-                                  (abs(hx_val - last_hx) > 1.0f) ||
-                                  (heat_status != last_heat) ||
-                                  (pump_active != last_pump);
-                                  
-            if (should_update_ui) {
-                // Batch UI updates to reduce LVGL blocking time
-                
-                // Cache string formatting to avoid repeated sprintf calls
-                static char steam_text[12], target_text[12], hx_text[12];
-                sprintf(steam_text, "%.0f°C", steam_val);
-                sprintf(target_text, "%.0f°C", target_val);
-                sprintf(hx_text, "%.0f°C", hx_val);
-                
-                // Update temperature displays
-                lv_label_set_text(&id(steam_temp_display), steam_text);
-                lv_label_set_text(&id(target_temp_display), target_text);
-                lv_label_set_text(&id(hx_temp_display), hx_text);
-                
-                // Update colors only if temperature value changed significantly
-                if (abs(steam_val - last_steam) > 1.0f) {
-                    if (steam_val > 115) {
-                        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF5722), 0);  // Red
-                    } else if (steam_val > 90) {
-                        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
-                    } else {
-                        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0x555555), 0);  // Gray
-                    }
-                }
-                
-                // Target temp always green (only set once per significant change)
-                if (abs(target_val - last_target) > 1.0f) {
-                    lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
-                }
-                
-                // HX temp colors (only update on significant change)
-                if (abs(hx_val - last_hx) > 1.0f) {
-                    if (hx_val >= 88 && hx_val <= 96) {
-                        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
-                    } else if ((hx_val >= 85 && hx_val < 88) || (hx_val > 96 && hx_val <= 100)) {
-                        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
-                    } else {
-                        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
-                    }
-                }
-                
-                // Cache values
-                last_steam = steam_val;
-                last_target = target_val;
-                last_hx = hx_val;
-                last_ui_update = now;
-            }
-            
-            // Timer control and automatic high-res mode for demo mode based on pump status changes
-            if (demo_last_pump_status != pump_active) {
-                if (pump_active == 1 && demo_last_pump_status == 0) {
-                    // Pump started - start timer and switch to high-res mode
-                    start_timer();
-                    id(high_res_chart) = true;
-                    ESP_LOGI("demo", "Demo brew started - timer started, switched to high-res mode");
-                    // Force chart recreation with new resolution
-                    recreate_temp_chart(&id(graph_area));
-                } else if (pump_active == 0 && demo_last_pump_status == 1) {
-                    // Pump stopped - stop timer and return to normal resolution after delay
-                    stop_timer();
-                    ESP_LOGI("demo", "Demo brew stopped - timer stopped, will return to normal resolution in 30s");
-                    // Schedule return to normal resolution after 30 seconds
-                    id(post_brew_timer) = millis();
-                }
-                demo_last_pump_status = pump_active;
-            }
-            
-            // OPTIMIZED STATUS UPDATES: Only update when state actually changes
-            if (heat_status != last_heat) {
-                if (heat_status == 1) {
-                    lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
-                    lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0xFF5722), 0);
-                } else {
-                    lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
-                    lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0x555555), 0);
-                }
-                last_heat = heat_status;
-            }
-            
-            if (pump_active != last_pump) {
-                if (pump_active == 1) {
-                    lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
-                    lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
-                } else {
-                    lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
-                    lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
-                }
-                last_pump = pump_active;
-            }
-            
-            // STATE-BASED STATUS DISPLAY: Show status based on demo state machine
-            static uint32_t last_blink = 0;
-            static bool blink_state = true;
-            
-            // Reduced blink frequency from 1s to 2s for better performance
-            if (now - last_blink > 2000) {
-                std::string new_status_text;
-                uint32_t new_status_color;
-                
-                if (blink_state) {
-                    // Show state-specific status messages
-                    switch (demo_state) {
-                        case DEMO_STARTUP:
-                            new_status_text = "STARTING UP";
-                            new_status_color = 0xFFC107;  // Amber
-                            break;
-                        case DEMO_HEATING_UP:
-                            new_status_text = "HEATING UP";
-                            new_status_color = 0xFF9800;  // Orange
-                            break;
-                        case DEMO_READY:
-                            new_status_text = "READY";
-                            new_status_color = 0x4CAF50;  // Green
-                            break;
-                        case DEMO_BREWING:
-                            new_status_text = "BREWING";
-                            new_status_color = 0x2196F3;  // Blue
-                            break;
-                        default:
-                            new_status_text = "DEMO MODE";
-                            new_status_color = 0xFFC107;  // Amber
-                            break;
-                    }
-                } else {
-                    // Alternate with "DEMO MODE" to indicate test mode
-                    new_status_text = "DEMO MODE";
-                    new_status_color = 0xFFC107;  // Amber
-                }
-                
-                // Only update if text changed
-                if (new_status_text != last_status_text) {
-                    lv_label_set_text(&id(machine_status), new_status_text.c_str());
-                    lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(new_status_color), 0);
-                    last_status_text = new_status_text;
-                }
-                
-                blink_state = !blink_state;
-                last_blink = now;
-            }
-            
-            // Version display - set once only (moved outside frequent update loop)
-            static bool version_set = false;
-            if (!version_set) {
-                lv_label_set_text(&id(version_display), "V1.06");
-                version_set = true;
-            }
-            
-            
-            ESP_LOGD("test_data", "Generated: Steam=%.0f Target=%.0f HX=%.0f Heat=%d Pump=%d", 
-                     steam_val, target_val, hx_val, heat_status, pump_active);
-        }
-        
-        last_protocol_update = now;
     }
     
-    // STEP 2: Add data to chart at appropriate intervals (1s for high-res, 5s for normal)
-    if (now - last_chart_update > chart_interval) {
-        // Add current temperature values to chart
-        add_temp_data(current_steam, current_hx, current_target);
-        last_chart_update = now;
+    // Update sequence counter (countdown in real Mara X)
+    if (sequence_counter > 0) sequence_counter--;
+    else sequence_counter = 1500;  // Reset cycle
+    
+    // Store current values
+    current_steam = steam_temp;
+    current_target = target_temp; 
+    current_hx = hx_temp;
+    current_heat = heat_status;
+    current_pump = pump_active;
+    
+    // Add to raw data buffer - this simulates UART data arrival
+    add_raw_uart_data(steam_temp, hx_temp, target_temp, heat_status, pump_active);
+    
+    // Update machine status display
+    static uint32_t last_status_update = 0;
+    if (now - last_status_update > 2000) {  // Update status every 2s
+        std::string status_text;
+        uint32_t status_color;
+        
+        switch (demo_state) {
+            case DEMO_STARTUP:
+                status_text = "STARTING UP";
+                status_color = 0xFFC107;  // Amber
+                break;
+            case DEMO_HEATING_UP:
+                status_text = "HEATING UP";
+                status_color = 0xFF9800;  // Orange
+                break;
+            case DEMO_READY:
+                status_text = "READY";
+                status_color = 0x4CAF50;  // Green
+                break;
+            case DEMO_BREWING:
+                status_text = "BREWING";
+                status_color = 0x2196F3;  // Blue
+                break;
+            default:
+                status_text = "DEMO MODE";
+                status_color = 0xFFC107;
+                break;
+        }
+        
+        lv_label_set_text(&id(machine_status), status_text.c_str());
+        lv_obj_set_style_text_color(&id(machine_status), lv_color_hex(status_color), 0);
+        
+        // Version display
+        lv_label_set_text(&id(version_display), "V1.06");
+        
+        last_status_update = now;
     }
     
-    // Timer is now updated separately via 100ms interval in main config
+    ESP_LOGV("demo", "Generated: S=%.0f T=%.0f H=%.0f Heat=%d Pump=%d State=%d", 
+             steam_temp, target_temp, hx_temp, heat_status, pump_active, demo_state);
+}
+            
+// PROFESSIONAL DATA COLLECTION - handles 400ms UART data
+void add_raw_uart_data(float steam, float hx, float target, int heat, int pump) {
+    uint32_t now = millis();
+    
+    // Add to raw data buffer
+    raw_data[raw_data_index] = {now, steam, hx, target, heat, pump};
+    raw_data_index = (raw_data_index + 1) % RAW_DATA_BUFFER_SIZE;
+    if (raw_data_index == 0) raw_data_filled = true;
+    
+    // IMMEDIATE UI UPDATE - Professional instrument feel
+    update_temperature_displays(steam, hx, target, heat, pump);
+    
+    // Process chart data at appropriate intervals
+    process_chart_data();
+    
+    ESP_LOGV("uart", "Raw data: S=%.0f H=%.0f T=%.0f Heat=%d Pump=%d", steam, hx, target, heat, pump);
 }
 
-// DUAL-RESOLUTION data storage - always store at 1s, downsample for 5s view
-void add_temp_data(float steam, float hx, float target) {
-    // Always store data in high-resolution (1s) arrays
-    steam_temps_1s[data_index_1s] = steam;
-    hx_temps_1s[data_index_1s] = hx;
-    target_temps_1s[data_index_1s] = target;
-    timestamps_1s[data_index_1s] = millis();
+// IMMEDIATE UI FEEDBACK - Always responsive
+void update_temperature_displays(float steam, float hx, float target, int heat, int pump) {
+    // Update temperature displays immediately
+    lv_label_set_text(&id(steam_temp_display), str_sprintf("%.0f°C", steam).c_str());
+    lv_label_set_text(&id(target_temp_display), str_sprintf("%.0f°C", target).c_str());
+    lv_label_set_text(&id(hx_temp_display), str_sprintf("%.0f°C", hx).c_str());
     
-    // Incremental min/max tracking (avoid expensive range scans)
-    static float running_min = 999.0f, running_max = 0.0f;
-    static bool min_max_initialized = false;
-    
-    if (!min_max_initialized) {
-        running_min = min(min(steam, hx), target);
-        running_max = max(max(steam, hx), target);
-        min_max_initialized = true;
+    // Update temperature colors
+    if (steam > 115) {
+        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+    } else if (steam > 90) {
+        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
     } else {
-        // Update running min/max incrementally
-        float current_min = min(min(steam, hx), target);
-        float current_max = max(max(steam, hx), target);
-        running_min = min(running_min, current_min);
-        running_max = max(running_max, current_max);
+        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0x555555), 0);  // Gray
     }
-
-    // CRITICAL OPTIMIZATION: Defer chart updates to reduce stutter
-    if (temp_chart != nullptr) {
-        static int chart_update_counter = 0;
-        static int pending_updates = 0;
-        static float pending_steam[3], pending_hx[3], pending_target[3];
+    
+    lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
+    
+    if (hx >= 88 && hx <= 96) {
+        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
+    } else if ((hx >= 85 && hx < 88) || (hx > 96 && hx <= 100)) {
+        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
+    } else {
+        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+    }
+            
+    // Update status indicators
+    if (heat == 1) {
+        lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+        lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0xFF5722), 0);
+    } else {
+        lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+        lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0x555555), 0);
+    }
+    
+    if (pump == 1) {
+        lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
+        lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
+    } else {
+        lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
+        lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
+    }
+    
+    // Timer control and automatic high-res mode
+    static int last_pump_status = -1;
+    if (last_pump_status != pump) {
+        if (pump == 1 && last_pump_status == 0) {
+            // Pump started - start timer and switch to high-res mode
+            start_timer();
+            id(high_res_chart) = true;
+            ESP_LOGI("brew", "Brew started - timer started, switched to high-res mode");
+            // Track brew window for shading
+            brew_event_start(millis());
+            recreate_temp_chart(&id(graph_area));
+        } else if (pump == 0 && last_pump_status == 1) {
+            // Pump stopped - stop timer and schedule return to normal resolution
+            stop_timer();
+            // Reset timer color to neutral on stop
+            set_timer_neutral((lv_obj_t*) &id(brew_timer));
+            ESP_LOGI("brew", "Brew stopped - timer stopped, will return to normal resolution after recovery");
+            // Close brew window for shading
+            brew_event_stop(millis());
+            // No timer-based switch here; handled by recovery window logic
+        }
+        last_pump_status = pump;
+    }
+}
+// CHART DATA PROCESSING - Convert raw 400ms data to chart resolution
+void process_chart_data() {
+    static uint32_t last_1s_update = 0;
+    static uint32_t last_lowres_update = 0;
+    uint32_t now = millis();
+    
+    // Update 1s chart data every 1000ms
+    if (now - last_1s_update >= HIGH_RES_INTERVAL_MS) {
+        float avg_steam = get_averaged_temp_at_time(now, HIGH_RES_INTERVAL_MS, 0);
+        float avg_hx = get_averaged_temp_at_time(now, HIGH_RES_INTERVAL_MS, 1);
+        float avg_target = get_averaged_temp_at_time(now, HIGH_RES_INTERVAL_MS, 2);
         
-        // Buffer up to 3 data points before batch updating chart
-        pending_steam[pending_updates] = steam;
-        pending_hx[pending_updates] = hx;
-        pending_target[pending_updates] = target;
-        pending_updates++;
-        
-        chart_update_counter++;
-        
-        // BATCH UPDATE: Only update chart every 3rd data point to reduce blocking
-        if (pending_updates >= 3 || chart_update_counter >= 6) {
-            // Apply all pending updates in one batch
-            for (int i = 0; i < pending_updates; i++) {
-                lv_chart_set_next_value(temp_chart, steam_series, (int32_t)pending_steam[i]);
-                lv_chart_set_next_value(temp_chart, hx_series, (int32_t)pending_hx[i]);
-                lv_chart_set_next_value(temp_chart, target_series, (int32_t)pending_target[i]);
+        if (avg_steam > 0) {  // Valid data
+            steam_1s[data_index_1s] = avg_steam;
+            hx_1s[data_index_1s] = avg_hx;
+            target_1s[data_index_1s] = avg_target;
+            timestamps_1s[data_index_1s] = now;
+            
+            data_index_1s = (data_index_1s + 1) % HIGH_RES_POINTS;
+            if (data_index_1s == 0) data_filled_1s = true;
+            
+            // Update high-res chart if active
+            if (is_high_res_mode()) {
+                update_chart_display();
             }
             
-            pending_updates = 0;  // Reset buffer
+            last_1s_update = now;
+            ESP_LOGD("chart_1s", "Added: S=%.1f H=%.1f T=%.1f", avg_steam, avg_hx, avg_target);
+        }
+    }
+    
+    // Update low-res chart data every 15000ms
+    if (now - last_lowres_update >= LOW_RES_INTERVAL_MS) {
+        float avg_steam = get_averaged_temp_at_time(now, LOW_RES_INTERVAL_MS, 0);
+        float avg_hx = get_averaged_temp_at_time(now, LOW_RES_INTERVAL_MS, 1);
+        float avg_target = get_averaged_temp_at_time(now, LOW_RES_INTERVAL_MS, 2);
+        
+        if (avg_steam > 0) {  // Valid data
+            steam_15s[data_index_15s] = avg_steam;
+            hx_15s[data_index_15s] = avg_hx;
+            target_15s[data_index_15s] = avg_target;
+            timestamps_15s[data_index_15s] = now;
             
-            // RANGE UPDATE: Much less frequent, only every 40 data points
-            static float last_min = 0, last_max = 0;
-            if (chart_update_counter >= 40) {
-                // Use incremental min/max instead of expensive range scan
-                float padded_min = running_min - (running_max - running_min) * 0.1f;
-                float padded_max = running_max + (running_max - running_min) * 0.1f;
-                
-                // Clamp to reasonable bounds
-                if (padded_min < 0) padded_min = 0;
-                if (padded_max > 200) padded_max = 200;
-                
-                // Only update range if it changed significantly (>10°C for even less updates)
-                if (abs((int)(padded_min - last_min)) > 10 || abs((int)(padded_max - last_max)) > 10) {
-                    lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)padded_min, (int32_t)padded_max);
-                    last_min = padded_min;
-                    last_max = padded_max;
-                    
-                    // Only refresh when range actually changes - most expensive operation
-                    lv_chart_refresh(temp_chart);
-                }
-                
-                chart_update_counter = 0;
-                
-                // Reset running min/max periodically to avoid drift
-                running_min = 999.0f;
-                running_max = 0.0f;
-                min_max_initialized = false;
+            data_index_15s = (data_index_15s + 1) % LOW_RES_POINTS;
+            if (data_index_15s == 0) data_filled_15s = true;
+            
+            // Update low-res chart if active
+            if (!is_high_res_mode()) {
+                update_chart_display();
+            }
+            
+            last_lowres_update = now;
+            ESP_LOGD("chart_15s", "Added: S=%.1f H=%.1f T=%.1f", avg_steam, avg_hx, avg_target);
+        }
+    }
+}
+            
+// HELPER FUNCTION - Get averaged temperature from raw data buffer
+float get_averaged_temp_at_time(uint32_t target_time, uint32_t window_ms, int temp_type) {
+    float sum = 0;
+    int count = 0;
+    uint32_t start_time = target_time - window_ms;
+    uint32_t end_time = target_time;
+    
+    // Search raw data buffer for points in time window
+    int start_idx = raw_data_filled ? raw_data_index : 0;
+    int total_points = raw_data_filled ? RAW_DATA_BUFFER_SIZE : raw_data_index;
+    
+    for (int i = 0; i < total_points; i++) {
+        int idx = (start_idx + i) % RAW_DATA_BUFFER_SIZE;
+        uint32_t timestamp = raw_data[idx].timestamp;
+        
+        if (timestamp >= start_time && timestamp <= end_time) {
+            float temp_val = 0;
+            switch (temp_type) {
+                case 0: temp_val = raw_data[idx].steam; break;
+                case 1: temp_val = raw_data[idx].hx; break;
+                case 2: temp_val = raw_data[idx].target; break;
+            }
+            
+            if (temp_val > 0 && temp_val < 200) {  // Valid temperature
+                sum += temp_val;
+                count++;
             }
         }
     }
-
-    data_index_1s = (data_index_1s + 1) % CHART_DATA_1S;
-    if (data_index_1s == 0) data_filled_1s = true;
     
-    // Update 5s downsampled data every 5th point
-    static int downsample_counter = 0;
-    downsample_counter++;
-    if (downsample_counter >= 5) {
-        // Add current values to 5s array
-        steam_temps_5s[data_index_5s] = steam;
-        hx_temps_5s[data_index_5s] = hx;
-        target_temps_5s[data_index_5s] = target;
-        timestamps_5s[data_index_5s] = millis();
-        
-        data_index_5s = (data_index_5s + 1) % CHART_DATA_5S;
-        if (data_index_5s == 0) data_filled_5s = true;
-        
-        downsample_counter = 0;
+    return count > 0 ? sum / count : 0;
+}
+
+// CHART DISPLAY UPDATE - Professional instrument performance
+void update_chart_display() {
+    if (temp_chart == nullptr) return;
+    
+    // Safety: switch back to low-res after recovery window + buffer, only if not brewing
+    auto pump_active_now = []() -> bool {
+        if (id(demo_mode_enabled)) {
+            return demo_is_brewing();
+        }
+        if (!raw_data_filled && raw_data_index == 0) return false;
+        int last = (raw_data_index - 1 + RAW_DATA_BUFFER_SIZE) % RAW_DATA_BUFFER_SIZE;
+        return raw_data[last].pump_status == 1;
+    };
+
+    if (is_high_res_mode() && !pump_active_now()) {
+        if (has_recovered()) {
+            // Record data-driven recovery moment for shading
+            brew_event_recovered(millis());
+            id(high_res_chart) = false;
+            ESP_LOGI("chart", "Auto-switching back to low-res (recovered)");
+            recreate_temp_chart(&id(graph_area));
+            return; // Avoid further work in this update cycle after mode change
+        }
     }
+
+    bool high_res = is_high_res_mode();
+    
+    // Get current data arrays
+    float* steam_data = high_res ? steam_1s : steam_15s;
+    float* hx_data = high_res ? hx_1s : hx_15s;
+    float* target_data = high_res ? target_1s : target_15s;
+    
+    // Add latest data point to chart
+    int latest_idx = high_res ? 
+        (data_index_1s - 1 + HIGH_RES_POINTS) % HIGH_RES_POINTS :
+        (data_index_15s - 1 + LOW_RES_POINTS) % LOW_RES_POINTS;
+        
+    lv_chart_set_next_value(temp_chart, steam_series, (int32_t)steam_data[latest_idx]);
+    lv_chart_set_next_value(temp_chart, hx_series, (int32_t)hx_data[latest_idx]);
+    lv_chart_set_next_value(temp_chart, target_series, (int32_t)target_data[latest_idx]);
+    
+    // Update Y-axis range every update for accuracy
+    float min_temp, max_temp;
+    get_temp_range(min_temp, max_temp);
+    lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
+    lv_chart_refresh(temp_chart);
+    ESP_LOGD("chart", "Y-range updated: %.0f-%.0f°C (mode: %s)", 
+             min_temp, max_temp, high_res ? "1s" : "15s");
+}
+
+// Legacy function - now redirects to professional system
+void add_temp_data(float steam, float hx, float target) {
+    // This function is kept for compatibility but now uses the professional system
+    add_raw_uart_data(steam, hx, target, 0, 0);  // Default heat=0, pump=0 for legacy calls
 }
 
 // Safe resolution check function
@@ -556,83 +686,104 @@ bool is_high_res_mode() {
     }
 }
 
-// Update chart point count when resolution changes
+// Update chart point count when resolution changes - both use 60 points now
 void update_chart_point_count() {
     if (temp_chart != nullptr) {
-        int new_point_count = is_high_res_mode() ? CHART_DATA_1S : CHART_DATA_5S;
-        lv_chart_set_point_count(temp_chart, new_point_count);
+        // Match point count to resolution: 50 (1s) or 60 (15s)
+        if (is_high_res_mode()) {
+            lv_chart_set_point_count(temp_chart, HIGH_RES_POINTS);
+        } else {
+            lv_chart_set_point_count(temp_chart, LOW_RES_POINTS);
+        }
     }
 }
 
-// Helper functions to get current data arrays based on resolution
+// Helper functions for professional chart system
 float* get_current_steam_data() {
-    return is_high_res_mode() ? steam_temps_1s : steam_temps_5s;
+    return is_high_res_mode() ? steam_1s : steam_15s;
 }
 
 float* get_current_hx_data() {
-    return is_high_res_mode() ? hx_temps_1s : hx_temps_5s;
+    return is_high_res_mode() ? hx_1s : hx_15s;
 }
 
 float* get_current_target_data() {
-    return is_high_res_mode() ? target_temps_1s : target_temps_5s;
+    return is_high_res_mode() ? target_1s : target_15s;
 }
 
 int get_current_data_count() {
     if (is_high_res_mode()) {
-        return data_filled_1s ? CHART_DATA_1S : data_index_1s;
+        return data_filled_1s ? HIGH_RES_POINTS : data_index_1s;
     } else {
-        return data_filled_5s ? CHART_DATA_5S : data_index_5s;
+        return data_filled_15s ? LOW_RES_POINTS : data_index_15s;
     }
 }
 
-int get_current_data_index() {
-    return is_high_res_mode() ? data_index_1s : data_index_5s;
-}
-
-bool get_current_data_filled() {
-    return is_high_res_mode() ? data_filled_1s : data_filled_5s;
-}
-
-int get_current_data_size() {
-    return is_high_res_mode() ? CHART_DATA_1S : CHART_DATA_5S;
+int get_current_data_points() {
+    return is_high_res_mode() ? HIGH_RES_POINTS : LOW_RES_POINTS;
 }
 
 // OPTIMIZED min/max calculation using current resolution data
 void get_temp_range(float& min_temp, float& max_temp) {
     min_temp = 999.0f;
     max_temp = 0.0f;
+    bool found_valid_data = false;
 
     float* steam_data = get_current_steam_data();
     float* hx_data = get_current_hx_data();
     float* target_data = get_current_target_data();
     int points = get_current_data_count();
     
-    // Unroll loop for better performance - process 3 temps at once
+    // Process all temperature values in current chart buffer
     for (int i = 0; i < points; i++) {
         float steam_val = steam_data[i];
         float hx_val = hx_data[i];
         float target_val = target_data[i];
         
-        // Find min/max in this data point
-        float point_min = (steam_val < hx_val) ? ((steam_val < target_val) ? steam_val : target_val) : ((hx_val < target_val) ? hx_val : target_val);
-        float point_max = (steam_val > hx_val) ? ((steam_val > target_val) ? steam_val : target_val) : ((hx_val > target_val) ? hx_val : target_val);
+        // Skip invalid data points (uninitialized or clearly invalid)
+        if (steam_val <= 0 || hx_val <= 0 || target_val <= 0 || 
+            steam_val > 200 || hx_val > 200 || target_val > 200) {
+            continue;
+        }
         
-        if (point_min < min_temp) min_temp = point_min;
-        if (point_max > max_temp) max_temp = point_max;
+        // Find min/max for each temperature series
+        if (!found_valid_data) {
+            min_temp = steam_val;
+            max_temp = steam_val;
+            found_valid_data = true;
+        }
+        
+        // Check all three temperatures
+        min_temp = min({min_temp, steam_val, hx_val, target_val});
+        max_temp = max({max_temp, steam_val, hx_val, target_val});
+    }
+    
+    // Fallback to reasonable defaults if no valid data found
+    if (!found_valid_data) {
+        min_temp = 60.0f;
+        max_temp = 140.0f;
+        ESP_LOGW("chart", "No valid temperature data found, using default range 60-140°C");
+        return;
     }
 
-    // Add some padding
+    // Add padding for better visibility (15% on each side)
     float range = max_temp - min_temp;
-    if (range < 10.0f) range = 10.0f;  // Minimum range
-    min_temp -= range * 0.1f;
-    max_temp += range * 0.1f;
+    if (range < 20.0f) range = 20.0f;  // Minimum 20°C range for better readability
+    float padding = range * 0.15f;  // 15% padding
+    min_temp -= padding;
+    max_temp += padding;
 
-    // Sensible bounds for espresso machine
+    // Sensible bounds for espresso machine and round nicely
     if (min_temp < 0) min_temp = 0;
     if (max_temp > 200) max_temp = 200;
+    // Round to whole degrees to avoid clipping due to truncation
+    min_temp = floorf(min_temp);
+    max_temp = ceilf(max_temp);
+    
+    ESP_LOGD("chart", "Temperature range calculated: %.1f - %.1f°C (range: %.1f°C)", min_temp, max_temp, max_temp - min_temp);
 }
 
-// Full chart rebuild - only used when needed (resolution change, clear, etc.)
+// Full chart rebuild - ensures proper time-based display for resolution switching
 void update_temp_chart() {
     if (temp_chart == nullptr) return;
 
@@ -641,28 +792,122 @@ void update_temp_chart() {
     lv_chart_set_all_value(temp_chart, hx_series, LV_CHART_POINT_NONE);
     lv_chart_set_all_value(temp_chart, target_series, LV_CHART_POINT_NONE);
 
-    // Add data points in chronological order using current resolution
-    float* steam_data = get_current_steam_data();
-    float* hx_data = get_current_hx_data();
-    float* target_data = get_current_target_data();
-    int points = get_current_data_count();
-    int data_size = get_current_data_size();
-    int start_idx = get_current_data_filled() ? get_current_data_index() : 0;
+    // Get current time-based parameters
+    bool high_res = is_high_res_mode();
+    uint32_t now = millis();
+    // Use configured windows and intervals
+    uint32_t time_span = (high_res ? HIGH_RES_WINDOW_SEC : LOW_RES_WINDOW_SEC) * 1000; // 50s or 900s
+    uint32_t interval = high_res ? HIGH_RES_INTERVAL_MS : LOW_RES_INTERVAL_MS;         // 1s or 15s intervals
+    
+    // Calculate how many data points we need to fill the timeframe
+    int target_points = time_span / interval;
+    int chart_points = high_res ? HIGH_RES_POINTS : LOW_RES_POINTS;
+    target_points = min(target_points, chart_points);
+    
+    bool used_local_range = false;
+    float used_min = 0.0f, used_max = 0.0f;
+    if (high_res) {
+        // Build high-res chart directly from raw buffer to avoid gaps
+        static float last_steam = 0, last_hx = 0, last_target = 0;
+        float local_min = 999.0f, local_max = 0.0f;
+        for (int i = target_points; i > 0; --i) {
+            uint32_t bucket_end = now - (uint32_t)(i - 1) * interval;
+            float avg_steam = get_averaged_temp_at_time(bucket_end, interval, 0);
+            float avg_hx = get_averaged_temp_at_time(bucket_end, interval, 1);
+            float avg_target = get_averaged_temp_at_time(bucket_end, interval, 2);
 
-    for (int i = 0; i < points; i++) {
-        int idx = (start_idx + i) % data_size;
-        lv_chart_set_next_value(temp_chart, steam_series, (int32_t)steam_data[idx]);
-        lv_chart_set_next_value(temp_chart, hx_series, (int32_t)hx_data[idx]);
-        lv_chart_set_next_value(temp_chart, target_series, (int32_t)target_data[idx]);
+            bool steam_ok = avg_steam > 0 && avg_steam < 200;
+            bool hx_ok = avg_hx > 0 && avg_hx < 200;
+            bool target_ok = avg_target > 0 && avg_target < 200;
+            if (!steam_ok) avg_steam = last_steam;
+            if (!hx_ok) avg_hx = last_hx;
+            if (!target_ok) avg_target = last_target;
+
+            lv_chart_set_next_value(temp_chart, steam_series, (int32_t)avg_steam);
+            lv_chart_set_next_value(temp_chart, hx_series, (int32_t)avg_hx);
+            lv_chart_set_next_value(temp_chart, target_series, (int32_t)avg_target);
+
+            last_steam = avg_steam;
+            last_hx = avg_hx;
+            last_target = avg_target;
+
+            // Track min/max for Y range in this rebuild
+            if (steam_ok || hx_ok || target_ok) {
+                float tmin = avg_steam;
+                float tmax = avg_steam;
+                if (hx_ok) { tmin = min(tmin, avg_hx); tmax = max(tmax, avg_hx); }
+                if (target_ok) { tmin = min(tmin, avg_target); tmax = max(tmax, avg_target); }
+                local_min = min(local_min, tmin);
+                local_max = max(local_max, tmax);
+            }
+        }
+
+        // If we collected valid min/max, set a padded Y range now
+        if (local_min < local_max && local_min < 900.0f) {
+            float range = local_max - local_min;
+            if (range < 20.0f) range = 20.0f;
+            float padding = range * 0.15f;
+            float y_min = floorf(max(0.0f, local_min - padding));
+            float y_max = ceilf(min(200.0f, local_max + padding));
+            lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)y_min, (int32_t)y_max);
+            used_local_range = true;
+            used_min = y_min;
+            used_max = y_max;
+        }
+    } else {
+        // Use low-res 15s buffers (covers 15m)
+        float* steam_data = steam_15s;
+        float* hx_data = hx_15s;
+        float* target_data = target_15s;
+        uint32_t* timestamps = timestamps_15s;
+        int data_idx = data_index_15s;
+        bool data_filled = data_filled_15s;
+        int data_size = LOW_RES_POINTS;
+
+        int available_points = data_filled ? data_size : data_idx;
+        int start_idx = 0;
+        if (data_filled) {
+            uint32_t oldest_time = now - time_span;
+            start_idx = data_idx;
+            for (int i = 0; i < data_size; i++) {
+                int idx = (data_idx + i) % data_size;
+                if (timestamps[idx] >= oldest_time) { start_idx = idx; break; }
+            }
+        }
+        int points_added = 0;
+        for (int i = 0; i < available_points && points_added < target_points; i++) {
+            int idx = (start_idx + i) % data_size;
+            if (timestamps[idx] == 0 || (now - timestamps[idx]) > time_span) continue;
+            lv_chart_set_next_value(temp_chart, steam_series, (int32_t)steam_data[idx]);
+            lv_chart_set_next_value(temp_chart, hx_series, (int32_t)hx_data[idx]);
+            lv_chart_set_next_value(temp_chart, target_series, (int32_t)target_data[idx]);
+            points_added++;
+        }
     }
 
     // Update chart range with dynamic scaling
-    float min_temp, max_temp;
-    get_temp_range(min_temp, max_temp);
-    lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
+    float min_temp = 0, max_temp = 0;
+    if (!used_local_range) {
+        get_temp_range(min_temp, max_temp);
+        lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
+    } else {
+        min_temp = used_min;
+        max_temp = used_max;
+    }
     
     // Dynamic grid lines based on temperature range
-    update_chart_grid(max_temp - min_temp);
+    float temp_range = max_temp - min_temp;
+    int y_divs = 4;  // Default
+    if (temp_range > 50) {
+        y_divs = 8;  // More divisions for large ranges
+    } else if (temp_range > 30) {
+        y_divs = 6;  // Medium divisions
+    } else if (temp_range > 15) {
+        y_divs = 4;  // Fewer divisions for small ranges
+    } else {
+        y_divs = 3;  // Minimal for very small ranges
+    }
+    lv_chart_set_div_line_count(temp_chart, y_divs, 6);  // 6 time divisions
 
     lv_chart_refresh(temp_chart);
 }
@@ -687,6 +932,8 @@ void update_chart_grid(float temp_range) {
     lv_chart_set_div_line_count(temp_chart, y_divs, x_divs);
 }
 
+// draw event moved to chart_draw.h
+
 // Create temperature chart
 void create_temp_chart(lv_obj_t* parent) {
     if (temp_chart != nullptr) {
@@ -700,10 +947,9 @@ void create_temp_chart(lv_obj_t* parent) {
 
     ESP_LOGI("chart", "Created chart: %p, size: 285x250", temp_chart);
 
-    // Chart configuration with safe point count (start with 5s, can be changed later)
+    // Chart configuration - point count will be adjusted per resolution
     lv_chart_set_type(temp_chart, LV_CHART_TYPE_LINE);
-    // Start with low-res point count - will be updated when resolution changes
-    lv_chart_set_point_count(temp_chart, CHART_DATA_5S);
+    lv_chart_set_point_count(temp_chart, 60);  // Will be updated by update_chart_point_count()
     lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, 60, 140);  // Default range
 
     // Disable all interaction and scrollbars
@@ -736,50 +982,23 @@ void create_temp_chart(lv_obj_t* parent) {
     hx_series = lv_chart_add_series(temp_chart, lv_color_hex(0x2196F3), LV_CHART_AXIS_PRIMARY_Y);     // Blue
     target_series = lv_chart_add_series(temp_chart, lv_color_hex(0x4CAF50), LV_CHART_AXIS_PRIMARY_Y); // Green
 
-    // Show Y-axis ticks and labels
+    // Show axis ticks and enable labels (formatted in draw event)
     lv_chart_set_axis_tick(temp_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 2, 5, 2, true, 50);
-
-    // Show X-axis ticks but hide labels (we'll use custom ones)
-    lv_chart_set_axis_tick(temp_chart, LV_CHART_AXIS_PRIMARY_X, 10, 2, 6, 2, false, 40);
+    lv_chart_set_axis_tick(temp_chart, LV_CHART_AXIS_PRIMARY_X, 10, 2, 6, 2, true, 40);
 
     // Series styling - lines only, no dots
     lv_obj_set_style_line_width(temp_chart, 3, LV_PART_ITEMS);
     lv_obj_set_style_size(temp_chart, 0, LV_PART_INDICATOR);  // Remove point indicators
 
-    // Add custom labels for axes
-    // Y-axis label (°C) - positioned below the highest Y value
+    // Add axis unit label (°C) - positioned below the highest Y value
     lv_obj_t* y_label = lv_label_create(parent);
     lv_label_set_text(y_label, "°C");
     lv_obj_set_style_text_color(y_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(y_label, &lv_font_montserrat_14, 0);
     lv_obj_set_pos(y_label, 5, 25);  // Below first Y-axis value
-
-    // X-axis time labels - 50s span for high-res, 5m span for normal  
-    const char* time_labels_5s[] = {"-5m", "-4m", "-3m", "-2m", "-1m", "0m"};
-    const char* time_labels_1s[] = {"-50s", "-40s", "-30s", "-20s", "-10s", "0s"};
-    const char** time_labels = time_labels_5s;  // Default to 5s labels
-    
-    // Try to use current resolution if globals are ready
-    if (millis() > 5000) {  // Wait for globals to be ready
-        if (id(high_res_chart)) {
-            time_labels = time_labels_1s;
-        }
-    }
-    
-    int chart_left = 30;  // Updated to match new chart position
-    int chart_width = 285; // Updated to match new chart width
-    int label_spacing = chart_width / 5;  // 5 intervals for 6 labels
-
-    for (int i = 0; i < 6; i++) {
-        lv_obj_t* x_label = lv_label_create(parent);
-        lv_label_set_text(x_label, time_labels[i]);
-        lv_obj_set_style_text_color(x_label, lv_color_hex(0x888888), 0);
-        lv_obj_set_style_text_font(x_label, &lv_font_montserrat_14, 0);
-        // Position: start at left edge, end at right edge
-        int x_pos = chart_left + (i * label_spacing) - 10;
-        if (i == 5) x_pos = chart_left + chart_width - 18;  // Better alignment for "0s/0m"
-        lv_obj_set_pos(x_label, x_pos, 260);  // Updated for expanded chart (was 235)
-    }
+    // Format axis tick labels + shaded sections via draw events
+    lv_obj_add_event_cb(temp_chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_BEGIN, nullptr);
+    lv_obj_add_event_cb(temp_chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_END, nullptr);
 
     // Chart will be populated by existing data when resolution changes
     // No need to reset indices - data persists across resolution switches
@@ -809,29 +1028,36 @@ void recreate_temp_chart(lv_obj_t* parent) {
     update_temp_chart();
 }
 
-// Clear both resolution chart data when demo mode is disabled
+// Clear all chart data when demo mode is disabled
 void clear_chart_data() {
+    // Clear raw data buffer
+    for (int i = 0; i < RAW_DATA_BUFFER_SIZE; i++) {
+        raw_data[i] = {0, 0, 0, 0, 0, 0};
+    }
+    raw_data_index = 0;
+    raw_data_filled = false;
+    
     // Reset high-resolution (1s) arrays
-    for (int i = 0; i < CHART_DATA_1S; i++) {
-        steam_temps_1s[i] = 0.0f;
-        hx_temps_1s[i] = 0.0f;
-        target_temps_1s[i] = 0.0f;
+    for (int i = 0; i < HIGH_RES_POINTS; i++) {
+        steam_1s[i] = 0.0f;
+        hx_1s[i] = 0.0f;
+        target_1s[i] = 0.0f;
         timestamps_1s[i] = 0;
     }
     
     // Reset low-resolution (5s) arrays  
-    for (int i = 0; i < CHART_DATA_5S; i++) {
-        steam_temps_5s[i] = 0.0f;
-        hx_temps_5s[i] = 0.0f;
-        target_temps_5s[i] = 0.0f;
-        timestamps_5s[i] = 0;
+    for (int i = 0; i < LOW_RES_POINTS; i++) {
+        steam_15s[i] = 0.0f;
+        hx_15s[i] = 0.0f;
+        target_15s[i] = 0.0f;
+        timestamps_15s[i] = 0;
     }
     
     // Reset data indices and filled flags
     data_index_1s = 0;
     data_filled_1s = false;
-    data_index_5s = 0;
-    data_filled_5s = false;
+    data_index_15s = 0;
+    data_filled_15s = false;
     
     // Clear chart display if it exists
     if (temp_chart != nullptr) {

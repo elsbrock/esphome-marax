@@ -33,6 +33,11 @@ void stop_timer() {
     timer_running = false;
 }
 
+// Set timer label to neutral color when stopped
+void set_timer_neutral(lv_obj_t* timer_label) {
+    lv_obj_set_style_text_color(timer_label, lv_color_hex(0x555555), 0);  // Gray neutral
+}
+
 // PERFORMANCE OPTIMIZED timer display with minimal LVGL calls
 void update_timer_display(lv_obj_t* timer_label) {
     if (!timer_running) {

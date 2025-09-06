@@ -7,28 +7,17 @@ interval:
           static std::string buffer = "";
           static uint32_t last_data_time = 0;
           static bool connected = false;
-          static bool test_mode_active = false;  // Track if we're showing test data
           static int last_pump_status = -1;  // Track pump status changes for timer control
+          // Current time
+          uint32_t now = millis();
           
-          // Check post-brew timer for automatic resolution switch back to normal
-          if (id(post_brew_timer) > 0 && id(high_res_chart)) {
-            uint32_t elapsed = now - id(post_brew_timer);
-            if (elapsed >= 30000) {  // 30 seconds
-              id(high_res_chart) = false;
-              id(post_brew_timer) = 0;  // Reset timer
-              ESP_LOGI("marax", "Post-brew delay complete - switched back to normal resolution");
-              // Force chart recreation with new resolution
-              recreate_temp_chart(&id(graph_area));
-            }
-          }
-          
+          // Auto return to low-res is now driven by recovery window in chart logic
           
           uint8_t data;
           
           // Test data generation is now handled by demo mode toggle
           
           // Check for data timeout (5 seconds)
-          uint32_t now = millis();
           if (connected && (now - last_data_time) > 5000) {
             // Connection lost - show disconnected state
             connected = false;
@@ -122,15 +111,18 @@ interval:
                       start_timer();
                       id(high_res_chart) = true;
                       ESP_LOGI("marax", "Brew started - timer started, switched to high-res mode");
+                      // Track brew window for shading/recovery timing
+                      brew_event_start(millis());
                       // Force chart recreation with new resolution
                       recreate_temp_chart(&id(graph_area));
                     } else if (pump_status == 0 && last_pump_status == 1) {
                       // Pump stopped - stop timer and return to normal resolution after delay
                       stop_timer();
-                      ESP_LOGI("marax", "Brew stopped - timer stopped, will return to normal resolution in 30s");
-                      // Schedule return to normal resolution after 30 seconds
-                      // This allows user to see the high-res brewing data for a while
-                      id(post_brew_timer) = millis();
+                      // Reset timer color to neutral on stop
+                      set_timer_neutral((lv_obj_t*)id(brew_timer));
+                      ESP_LOGI("marax", "Brew stopped - timer stopped, will return to normal resolution after recovery");
+                      // Close brew window for shading/recovery timing
+                      brew_event_stop(millis());
                     }
                     last_pump_status = pump_status;
                   }
@@ -140,8 +132,8 @@ interval:
                   id(service_temp).publish_state(target_temp_val);
                   id(hx_temp).publish_state(hx_temp_val);
                   
-                  // Add data to chart
-                  add_temp_data(steam_temp_val, hx_temp_val, target_temp_val);
+                  // PROFESSIONAL SYSTEM: Add raw UART data immediately (handles 400ms frequency)
+                  add_raw_uart_data(steam_temp_val, hx_temp_val, target_temp_val, heat_status, pump_status);
                   
                   // Update display labels
                   lv_label_set_text((lv_obj_t*)id(steam_temp_display), str_sprintf("%.0f°C", steam_temp_val).c_str());

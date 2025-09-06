@@ -259,8 +259,7 @@ lvgl:
                   value: !lambda "return !id(high_res_chart);"
               - logger.log:
                   format: "Chart resolution toggled: %s"
-                  args: ['id(high_res_chart) ? "1s" : "5s"']
+                  args: ['id(high_res_chart) ? "1s" : "15s"']
               - lambda: |-
                   // Force chart recreation with new labels
                   recreate_temp_chart(id(graph_area));
-

@@ -7,9 +7,11 @@ A professional temperature monitoring display for the Lelit Mara X espresso mach
 - **Real-time temperature monitoring** with interactive charts
 - **Professional LVGL interface** with smooth animations and touch controls
 - **Multi-series temperature charts** (Steam, HX, Target temperatures)
-- **Dual resolution modes** - switchable 1s/5s data resolution via touch
+- **Dual resolution modes** — 1s (50s window) and 15s (15m window)
+- **Automatic mode switching** — high‑res on brew start; low‑res after adaptive recovery
+- **Context shading** — brew window and 90s recovery highlighted subtly
 - **Interactive demo mode** - tap UART icon to enable test data simulation
-- **Precision shot timer** - 100ms resolution brewing timer (MM:SS.D format)  
+- **Precision shot timer** — 100ms resolution (MM:SS.D), value persists after stop
 - **Smart connectivity** - seamless switching between demo and live data
 - **Touch-friendly interface** optimized for espresso workflow
 - **Material Design icons** with dynamic status colors
@@ -99,7 +101,8 @@ config/
 ├── sensors.yaml           # Temperature sensor setup
 └── uart_parser.yaml       # Mara X protocol parsing
 includes/
-└── chart_helpers.h        # Temperature chart implementation
+├── chart_helpers.h        # Chart data, logic, rendering
+└── chart_draw.h           # Draw callbacks (axis labels, shaded bands)
 ```
 
 ## Mara X Protocol
@@ -133,13 +136,16 @@ Where:
 - **Blue line**: HX/Brew temperature  
 - **Green line**: Target temperature
 - **Grid**: Subtle dotted lines for easy reading
-- **Dynamic time scale**: 5-minute history (5s resolution) or 1-minute history (1s resolution)
-- **Touch control**: Tap chart area to toggle between 1s/5s resolution modes
+- **Dynamic time scale**: 15-minute history (15s) or 50-second history (1s)
+- **Touch control**: Tap chart area to toggle between 1s/15s
+- **Shaded context**: Brew window (blue) and recovery (green, 90s) bands
+- **Auto-switching**: High‑res on pump start; back to low‑res after adaptive recovery
+- **No gaps**: Switching resolution backfills high‑res from raw data (no left gap)
 
 ### Touch Controls
 
 - **Tap UART icon**: Toggle demo mode (shows animated test data)
-- **Tap chart area**: Switch between 1-second and 5-second resolution
+- **Tap chart area**: Switch between 1-second and 15-second resolution
 - **Demo mode**: Automatically disables when real UART data is received
 
 ## Development
@@ -156,6 +162,8 @@ Requirements:
 - Animated test data simulation
 - Running shot timer with 100ms precision
 - Realistic temperature patterns and machine cycles  
+- Startup warmup ~60s, main heat-up ~5 minutes to ready
+- Brews restart after adaptive recovery completes (+ small buffer)
 - Automatically disables when real UART data is received
 
 **No Data Mode** (when no UART connection):
@@ -192,8 +200,9 @@ Requirements:
 
 ### Performance
 - LVGL charts are optimized for smooth updates
-- 5-second data intervals balance responsiveness with memory usage
-- Auto-scaling Y-axis adapts to temperature ranges
+- Low‑res: 15-second data intervals; High‑res: 1-second
+- Y-axis auto-scales every update with padding to prevent clipping
+- Axis labels formatted via draw events; shaded bands drawn efficiently
 
 ## License
 
