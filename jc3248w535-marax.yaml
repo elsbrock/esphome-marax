@@ -58,9 +58,14 @@ wifi:
 
 captive_portal:
 
-# Improv lets ESP Web Tools configure WiFi over USB-serial right after a
-# fresh flash — no need to connect to the fallback hotspot first.
+# Two Improv flavours: serial runs over the USB connection ESP Web Tools
+# uses right after flashing; BLE works independently from a phone app or
+# Chrome Web Bluetooth, which is a more reliable fallback if the serial
+# handshake misses the boot window.
 improv_serial:
+
+esp32_improv:
+  authorizer: none  # No physical button required to start provisioning.
 
 # UART for Mara X communication
 uart:

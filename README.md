@@ -68,7 +68,9 @@ correctly.
 Open <https://elsbrock.github.io/esphome-marax/> in **Chrome or Edge** on
 desktop, plug your ESP32-S3 board in over USB and hit *Install firmware*.
 After flashing, the page walks you through WiFi setup via
-[Improv](https://www.improv-wifi.com/) — no captive-hotspot dance.
+[Improv-Serial](https://www.improv-wifi.com/). The firmware also exposes
+Improv over BLE as a fallback if the serial handshake misses the boot
+window — pair from a phone app or Chrome's Web Bluetooth.
 
 WebSerial only works in Chromium-based browsers (Chrome, Edge, Opera) on
 desktop; Safari and Firefox can't flash this way.
