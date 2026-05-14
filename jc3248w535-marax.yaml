@@ -12,9 +12,12 @@ esphome:
       # widgets it can see in the YAML; our chart is built imperatively in
       # on_boot, so ESPHome emits `#define LV_USE_CHART 0`. The -U/-D pair
       # undefines that and re-enables the chart widget without tripping
-      # -Werror's "macro redefined" check.
-      - -U LV_USE_CHART
-      - -D LV_USE_CHART=1
+      # -Werror's "macro redefined" check. The no-space form matters here:
+      # YAML serialises each entry as one shell arg, and "-U LV_USE_CHART"
+      # would reach gcc as a single token where the leading space makes
+      # the macro identifier invalid.
+      - -ULV_USE_CHART
+      - -DLV_USE_CHART=1
   includes:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
