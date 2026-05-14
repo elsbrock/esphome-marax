@@ -3,12 +3,14 @@ esphome:
   friendly_name: "jc3248w535 Mara X Display"
   platformio_options:
     build_flags:
-      - -D LV_USE_CHART=1
-      # Silence verbose debug logs in production
+      # MARAX_PRODUCTION silences verbose ESP_LOGD/V from our chart helpers.
       - -D MARAX_PRODUCTION=1
-      # Enable unused code warnings and treat warnings as errors
+      # Treat warnings as errors so lint regressions break the build.
       - -Wunused
       - -Werror
+      # Note: do not set -D LV_USE_CHART=1 here — ESPHome 2026.4+ auto-enables
+      # it when a chart widget is referenced in the LVGL config, so an
+      # explicit define produces a "macro redefined" error under -Werror.
   includes:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
