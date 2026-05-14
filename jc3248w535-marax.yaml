@@ -8,16 +8,13 @@ esphome:
       # Treat warnings as errors so lint regressions break the build.
       - -Wunused
       - -Werror
-      # Note: do not set -D LV_USE_CHART=1 here — ESPHome 2026.4+ auto-enables
-      # it when a chart widget is referenced in the LVGL config, so an
-      # explicit define produces a "macro redefined" error under -Werror.
-    # Pin LVGL to 8.4 — our chart helpers (chart_helpers.h, chart_draw.h) use
-    # the v8 chart API. LVGL 9 ships under a new symbol set and would
-    # require a non-trivial port. Without this pin, fresh CI builds resolve
-    # to LVGL 9 via ESP-IDF managed_components and the build fails on every
-    # chart symbol; cached local builds happily keep their 8.4 lib_deps copy.
-    lib_deps:
-      - lvgl/lvgl@8.4.0
+      # Force-enable LV_USE_CHART. ESPHome generates lv_conf.h based on
+      # widgets it can see in the YAML; our chart is built imperatively in
+      # on_boot, so ESPHome emits `#define LV_USE_CHART 0`. The -U/-D pair
+      # undefines that and re-enables the chart widget without tripping
+      # -Werror's "macro redefined" check.
+      - -U LV_USE_CHART
+      - -D LV_USE_CHART=1
   includes:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
@@ -204,16 +201,13 @@ touchscreen:
         args: [touch.x, touch.y]
 
 # QSPI Display configuration for AXS15231 with LVGL.
-# Note: rotation stays on the display block (not lvgl:) because we pin to
-# ESPHome 2026.2.x in CI (.github/workflows/build.yml), and the `rotation:`
-# key under lvgl: was added in a later release. ESPHome 2026.4+ flips this
-# the other way around — we'll move it when we port to LVGL 9.
+# Rotation is owned by the LVGL config (see config/display_ui.yaml) — ESPHome
+# 2026.4+ rejects `rotation:` here when the display is bound to lvgl.
 display:
   - platform: qspi_dbi
     id: main_display
     model: JC4832W535
     data_rate: 40MHz
-    rotation: 90
     dimensions:
       height: 480
       width: 320

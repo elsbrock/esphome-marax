@@ -115,6 +115,12 @@ static lv_chart_series_t* steam_series = nullptr;
 static lv_chart_series_t* hx_series = nullptr;
 static lv_chart_series_t* target_series = nullptr;
 
+// Last Y-axis range applied to the chart. File-scope (not function-local
+// static) so the LVGL 9 tick label callback in chart_draw.h can read it
+// without scanning data on every paint.
+int32_t last_y_min = -9999;
+int32_t last_y_max = -9999;
+
 // Forward declarations - Professional instrument interface
 void add_raw_uart_data(float steam, float hx, float target, int heat, int pump);
 void update_temperature_displays(float steam, float hx, float target, int heat, int pump);
@@ -722,8 +728,6 @@ void update_chart_display() {
     get_temp_range(min_temp, max_temp);
     int32_t y_min = (int32_t)min_temp;
     int32_t y_max = (int32_t)max_temp;
-    static int32_t last_y_min = -9999;
-    static int32_t last_y_max = -9999;
     int32_t dmin = y_min - last_y_min; if (dmin < 0) dmin = -dmin;
     int32_t dmax = y_max - last_y_max; if (dmax < 0) dmax = -dmax;
     bool range_changed = (last_y_min == -9999) || dmin > 2 || dmax > 2;
@@ -1035,7 +1039,12 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_clear_flag(temp_chart, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_clear_flag(temp_chart, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
     lv_obj_clear_flag(temp_chart, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    // Padding doubles as the gutter that our custom tick label callback
+    // paints into. v8's lv_chart_set_axis_tick reserved this space via the
+    // draw_size parameter; v9 has no equivalent, so we reserve it manually.
     lv_obj_set_style_pad_all(temp_chart, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(temp_chart, 30, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(temp_chart, 20, LV_PART_MAIN);
     lv_obj_set_scrollbar_mode(temp_chart, LV_SCROLLBAR_MODE_OFF);
 
     // Fine-grained dynamic grid
@@ -1060,13 +1069,14 @@ void create_temp_chart(lv_obj_t* parent) {
     hx_series = lv_chart_add_series(temp_chart, lv_color_hex(0x2196F3), LV_CHART_AXIS_PRIMARY_Y);     // Blue
     target_series = lv_chart_add_series(temp_chart, lv_color_hex(0x4CAF50), LV_CHART_AXIS_PRIMARY_Y); // Green
 
-    // Show axis ticks and enable labels (formatted in draw event)
-    lv_chart_set_axis_tick(temp_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 2, 5, 2, true, 50);
-    lv_chart_set_axis_tick(temp_chart, LV_CHART_AXIS_PRIMARY_X, 10, 2, 6, 2, true, 40);
+    // Tick labels are now drawn manually by chart_tick_label_cb during the
+    // chart's MAIN_END draw event — v9 removed lv_chart_set_axis_tick and the
+    // LV_PART_TICKS draw path entirely.
 
     // Series styling - lines only, no dots
     lv_obj_set_style_line_width(temp_chart, 3, LV_PART_ITEMS);
-    lv_obj_set_style_size(temp_chart, 0, LV_PART_INDICATOR);  // Remove point indicators
+    // 4-arg form in v9 (was 3-arg in v8): width, height, selector.
+    lv_obj_set_style_size(temp_chart, 0, 0, LV_PART_INDICATOR);
 
     // Add axis unit label (°C) - positioned below the highest Y value
     lv_obj_t* y_label = lv_label_create(parent);
@@ -1074,10 +1084,11 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_set_style_text_color(y_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(y_label, &lv_font_montserrat_14, 0);
     lv_obj_set_pos(y_label, 5, 25);  // Below first Y-axis value
-    // Axis tick labels on BEGIN; shading overlay on END. Each handler is
-    // narrowly scoped so it only does work for its own draw part.
-    lv_obj_add_event_cb(temp_chart, chart_tick_label_cb, LV_EVENT_DRAW_PART_BEGIN, nullptr);
-    lv_obj_add_event_cb(temp_chart, chart_shading_cb, LV_EVENT_DRAW_PART_END, nullptr);
+
+    // Shading paints behind the series on MAIN_BEGIN; tick labels paint on
+    // top during MAIN_END. lv_event_get_layer(e) is the v9 entry point.
+    lv_obj_add_event_cb(temp_chart, chart_shading_cb, LV_EVENT_DRAW_MAIN_BEGIN, nullptr);
+    lv_obj_add_event_cb(temp_chart, chart_tick_label_cb, LV_EVENT_DRAW_MAIN_END, nullptr);
 
     // Chart will be populated by existing data when resolution changes
     // No need to reset indices - data persists across resolution switches

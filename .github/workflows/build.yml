@@ -40,13 +40,7 @@ jobs:
         id: esphome-build
         with:
           yaml-file: ${{ matrix.device }}.yaml
-          # Pin to an ESPHome that still bundles LVGL 8 — the chart helpers in
-          # includes/chart_helpers.h use the v8 chart API (LV_CHART_AXIS_*,
-          # LV_EVENT_DRAW_PART_BEGIN/END, lv_chart_set_axis_tick,
-          # lv_chart_set_point_count, etc), which was rewritten in LVGL 9
-          # that ships with ESPHome 2026.4+. Migration is tracked separately;
-          # release builds stay on 2026.2.x until the chart code is ported.
-          version: "2026.2.4"
+          version: latest
 
       - name: Move generated files to output
         run: |

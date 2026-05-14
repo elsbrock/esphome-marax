@@ -4,12 +4,12 @@ lvgl:
     - main_display
   touchscreens:
     - main_touchscreen
+  # Panel is mounted in portrait but the UI renders landscape.
+  rotation: 90
   # Keep the draw buffer in internal SRAM (>25% always goes to PSRAM). 12% of a
   # 480x320 RGB565 framebuffer is ~36 KB which fits comfortably in S3 SRAM and
   # is ~4-8x faster to push pixels through than PSRAM.
   buffer_size: 12%
-  # Note: rotation lives on the display block (see jc3248w535-marax.yaml) for
-  # ESPHome 2026.2.x compatibility.
 
   style_definitions:
     - id: style_screen
