@@ -16,6 +16,8 @@ Firmware works end-to-end on the jc3248w535 board. Still looking for:
 
 If you've designed something for this combo, open an issue or PR.
 
+![Mara X Display in BREWING state — shot timer, steam/target/brew temperatures, dual-line chart with brew-window shading](docs/preview.png)
+
 ## Features
 
 - Live steam / HX / target temperature readout with brew status

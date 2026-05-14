@@ -134,6 +134,25 @@
       border-radius: 3px;
     }
 
+    figure.preview {
+      margin: 2.5rem 0;
+      text-align: center;
+    }
+    figure.preview img {
+      max-width: 100%;
+      width: 480px;
+      height: auto;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 40px -16px rgba(0, 0, 0, .9);
+    }
+    figure.preview figcaption {
+      color: var(--dim);
+      font-size: .82rem;
+      margin-top: .75rem;
+      font-style: italic;
+    }
+
     footer {
       margin-top: 4.5rem;
       padding-top: 2rem;
@@ -155,6 +174,11 @@
       <h1>Mara X <span class="accent">Display</span></h1>
       <p class="tagline">ESPHome firmware that puts a live brew timer, recovery-shaded temperature chart and machine status on a 3.5″ touchscreen wired to your Lelit Mara X.</p>
     </header>
+
+    <figure class="preview">
+      <img src="preview.png" alt="Mara X Display in BREWING state — shot timer at 00:21.6, steam/target/brew temperatures on the left, dual-line chart with blue brew-window shading on the right.">
+      <figcaption>BREWING state — shot timer, live temperatures, brew-window shading on the chart.</figcaption>
+    </figure>
 
     <section class="install-panel" id="install">
       <esp-web-install-button manifest="manifest.json">
