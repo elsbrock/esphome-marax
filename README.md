@@ -7,6 +7,15 @@ built on ESPHome + LVGL.
 > Not affiliated with or endorsed by Lelit. Hobby project, MIT-licensed,
 > use at your own risk — especially when wiring into the machine's UART.
 
+## Status
+
+Firmware works end-to-end on the jc3248w535 board. Still looking for:
+
+- a nicer enclosure / mount for the display
+- a clean PCB harness for the UART + power wiring into the Mara X
+
+If you've designed something for this combo, open an issue or PR.
+
 ## Features
 
 - Live steam / HX / target temperature readout with brew status
