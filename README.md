@@ -32,10 +32,17 @@ If you've designed something for this combo, open an issue or PR.
 |---------------|------------|----------------------------|
 | jc3248w535    | ✅ Tested   | `jc3248w535-marax.yaml`    |
 
+The board is an all-in-one ESP32-S3 module with a 3.5″ 480×320 QSPI
+touchscreen — typically listed under search terms like *"ESP32 S3 3.5
+inch LCD Development Board 480x320 Display"*. Internally the panel is
+driven by the `qspi_dbi` platform with the `JC4832W535` model, which is
+the closest panel ID in ESPHome's driver that drives this controller
+correctly.
+
 ### Hardware Requirements
 
-- ESP32-S3 development board (tested with ESP32-S3-DevKitC-1)
-- 3.5" touchscreen display (480×320 QSPI) — see supported models above
+- The all-in-one board above (or an ESP32-S3-DevKitC-1 wired to a
+  compatible 480×320 QSPI display)
 - Touch controller: AXS15231
 - UART connection to a Lelit Mara X
 
