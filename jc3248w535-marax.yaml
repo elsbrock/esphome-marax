@@ -50,6 +50,10 @@ wifi:
 
 captive_portal:
 
+# Improv lets ESP Web Tools configure WiFi over USB-serial right after a
+# fresh flash — no need to connect to the fallback hotspot first.
+improv_serial:
+
 # UART for Mara X communication
 uart:
   id: marax_uart
