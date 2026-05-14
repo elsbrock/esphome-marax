@@ -230,7 +230,10 @@ lvgl:
                   text_font: default_font
                   text_color: 0x333333
 
-        # Right column (3/4) - Temperature Chart
+        # Right column (3/4) - Temperature Chart.
+        # The lv_chart itself is created imperatively in esphome.on_boot so the
+        # custom draw-event callbacks can be attached; the YAML just provides
+        # the container.
         - obj:
             id: graph_area
             x: 150  # Move 5px left (was 155)
@@ -243,11 +246,6 @@ lvgl:
             scrollable: false  # Disable scrolling
             scroll_chain: false  # Disable scroll chain
             click_focusable: false  # Disable click focus for now
-            widgets:
-              - label:
-                  text: !lambda |-
-                    create_temp_chart(id(graph_area));
-                    return "";
 
         # Transparent overlay for chart resolution toggle
         - obj:

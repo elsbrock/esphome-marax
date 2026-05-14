@@ -13,6 +13,14 @@ esphome:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
     - includes/chart_draw.h
+  # Build the lv_chart after LVGL has finished setting up the page tree.
+  # Previously this was done as a side-effect of a dummy label's text lambda
+  # in display_ui.yaml, which was load-bearing and re-polled by ESPHome.
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          create_temp_chart(id(graph_area));
 
 esp32:
   board: esp32-s3-devkitc-1
