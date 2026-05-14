@@ -52,7 +52,19 @@ If you've designed something for this combo, open an issue or PR.
 | UART TX           | GPIO43                 |
 | UART RX           | GPIO44                 |
 
-## Quick Start
+## Install
+
+### From the browser (easiest)
+
+Open <https://elsbrock.github.io/esphome-marax/> in **Chrome or Edge** on
+desktop, plug your ESP32-S3 board in over USB and hit *Install firmware*.
+After flashing, the page walks you through WiFi setup via
+[Improv](https://www.improv-wifi.com/) — no captive-hotspot dance.
+
+WebSerial only works in Chromium-based browsers (Chrome, Edge, Opera) on
+desktop; Safari and Firefox can't flash this way.
+
+### From source
 
 1. **Clone:**
    ```bash
@@ -74,10 +86,8 @@ If you've designed something for this combo, open an issue or PR.
 
 If the device can't join your WiFi after flashing, it falls back to a
 captive portal on the `Marax-Display Fallback Hotspot` SSID using
-`ap_password` from your `secrets.yaml`.
-
-Subsequent updates can be sent over the air via the ESPHome dashboard or
-Home Assistant.
+`ap_password` from your `secrets.yaml`. Subsequent updates can be sent
+over the air via the ESPHome dashboard or Home Assistant.
 
 ## Configuration Structure
 
