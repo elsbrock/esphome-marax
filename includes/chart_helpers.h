@@ -618,37 +618,42 @@ void process_chart_data() {
     }
 }
             
-// HELPER FUNCTION - Get averaged temperature from raw data buffer
+// HELPER FUNCTION - Get averaged temperature from raw data buffer.
+// Walks backward from the most recent insertion. Because timestamps in the
+// raw buffer are monotonically increasing, the first entry older than
+// start_time means everything earlier is also out-of-window and we can stop.
+// This keeps the inner loop O(k) where k is the number of points in the
+// window (~3 for a 1s window, ~38 for a 15s window) instead of always
+// scanning all 200 buffer slots.
 float get_averaged_temp_at_time(uint32_t target_time, uint32_t window_ms, int temp_type) {
-    float sum = 0;
-    int count = 0;
     uint32_t start_time = target_time - window_ms;
     uint32_t end_time = target_time;
-    
-    // Search raw data buffer for points in time window
-    int start_idx = raw_data_filled ? raw_data_index : 0;
-    int total_points = raw_data_filled ? RAW_DATA_BUFFER_SIZE : raw_data_index;
-    
-    for (int i = 0; i < total_points; i++) {
-        int idx = (start_idx + i) % RAW_DATA_BUFFER_SIZE;
-        uint32_t timestamp = raw_data[idx].timestamp;
-        
-        if (timestamp >= start_time && timestamp <= end_time) {
-            float temp_val = 0;
-            switch (temp_type) {
-                case 0: temp_val = raw_data[idx].steam; break;
-                case 1: temp_val = raw_data[idx].hx; break;
-                case 2: temp_val = raw_data[idx].target; break;
-            }
-            
-            if (temp_val > 0 && temp_val < 200) {  // Valid temperature
-                sum += temp_val;
-                count++;
-            }
+
+    int available = raw_data_filled ? RAW_DATA_BUFFER_SIZE : raw_data_index;
+    if (available == 0) return 0.0f;
+
+    float sum = 0.0f;
+    int count = 0;
+    for (int i = 0; i < available; i++) {
+        int idx = (raw_data_index - 1 - i + RAW_DATA_BUFFER_SIZE) % RAW_DATA_BUFFER_SIZE;
+        uint32_t ts = raw_data[idx].timestamp;
+        if (ts == 0) break;            // uninitialized slot beyond valid data
+        if (ts < start_time) break;    // older than window; earlier slots are older still
+        if (ts > end_time) continue;   // skip future-dated entries (rare)
+
+        float v = 0.0f;
+        switch (temp_type) {
+            case 0: v = raw_data[idx].steam; break;
+            case 1: v = raw_data[idx].hx; break;
+            case 2: v = raw_data[idx].target; break;
+        }
+        if (v > 0.0f && v < 200.0f) {
+            sum += v;
+            count++;
         }
     }
-    
-    return count > 0 ? sum / count : 0;
+
+    return count > 0 ? sum / count : 0.0f;
 }
 
 // CHART DISPLAY UPDATE - Professional instrument performance
