@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mara X Display — ESPHome firmware for the Lelit Mara X</title>
+  <meta name="description" content="Touchscreen temperature, brew timer and recovery-shaded chart display for the Lelit Mara X espresso machine. ESP32-S3 + ESPHome.">
+
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --panel: #121212;
+      --border: #1f1f1f;
+      --fg: #e8e8e8;
+      --dim: #888;
+      --accent: #4caf50;
+      --accent-soft: #2e6b30;
+      --warn: #ff9800;
+      --danger: #ff5722;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+      font-size: 16px;
+    }
+    main {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 5rem 1.5rem 6rem;
+    }
+
+    header { margin-bottom: 3.5rem; }
+    h1 {
+      font-family: "Iowan Old Style", "Source Serif Pro", Georgia, serif;
+      font-weight: 400;
+      font-size: 2.6rem;
+      letter-spacing: -.015em;
+      margin: 0 0 .65rem;
+      line-height: 1.15;
+    }
+    h1 .accent { color: var(--accent); font-style: italic; }
+    .tagline {
+      color: var(--dim);
+      font-size: 1.05rem;
+      margin: 0;
+      max-width: 36rem;
+    }
+
+    section { margin: 2.75rem 0; }
+    h2 {
+      font-size: .82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--dim);
+      margin: 0 0 1.1rem;
+    }
+    ul.features {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    ul.features li {
+      padding: .35rem 0;
+      color: var(--fg);
+    }
+    ul.features li::before {
+      content: "›";
+      color: var(--accent);
+      margin-right: .65rem;
+      font-weight: 600;
+    }
+
+    .install-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 2.25rem 2rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .install-panel esp-web-install-button { display: inline-block; }
+    .install-panel button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: .9rem 2.25rem;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: .01em;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background-color .15s ease;
+    }
+    .install-panel button:hover { background: #5dd55f; }
+    .unsupported, .not-allowed {
+      display: block;
+      color: var(--danger);
+      font-size: .95rem;
+      margin: .25rem 0 0;
+    }
+    .post-install {
+      color: var(--dim);
+      font-size: .9rem;
+      margin: 1.5rem 0 0;
+      max-width: 28rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .post-install a { color: var(--fg); border-bottom: 1px dotted var(--dim); text-decoration: none; }
+    .post-install a:hover { border-bottom-color: var(--accent); }
+
+    .status-note {
+      background: var(--panel);
+      border-left: 3px solid var(--warn);
+      padding: 1rem 1.25rem;
+      margin: 2.5rem 0;
+      font-size: .95rem;
+      color: var(--fg);
+    }
+    .status-note strong { color: var(--warn); }
+
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .88em;
+      color: var(--fg);
+      background: var(--panel);
+      padding: .1rem .35rem;
+      border-radius: 3px;
+    }
+
+    footer {
+      margin-top: 4.5rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--dim);
+      font-size: .85rem;
+    }
+    footer a {
+      color: var(--fg);
+      text-decoration: none;
+      border-bottom: 1px solid var(--border);
+    }
+    footer a:hover { border-bottom-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Mara X <span class="accent">Display</span></h1>
+      <p class="tagline">ESPHome firmware that puts a live brew timer, recovery-shaded temperature chart and machine status on a 3.5″ touchscreen wired to your Lelit Mara X.</p>
+    </header>
+
+    <section class="install-panel" id="install">
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="activate">Install firmware</button>
+        <span slot="unsupported" class="unsupported">Web Serial isn't available in this browser — use Chrome or Edge on desktop.</span>
+        <span slot="not-allowed" class="not-allowed">This page must be served over HTTPS for flashing to work.</span>
+      </esp-web-install-button>
+      <p class="post-install">Plug the ESP32-S3 board into USB, click <em>Install</em>, and pick the serial port. After flashing you'll be prompted for WiFi credentials right in the browser via <a href="https://www.improv-wifi.com/">Improv</a>.</p>
+    </section>
+
+    <div class="status-note">
+      <strong>Hobby project.</strong> Not affiliated with Lelit. Still looking for a nice display enclosure and a clean PCB harness for the UART + power wiring — open an issue if you've designed something for this combo.
+    </div>
+
+    <section>
+      <h2>What you get</h2>
+      <ul class="features">
+        <li>Steam, HX and target temperatures live off the Mara X UART</li>
+        <li>Shot timer at 100 ms precision, value persists after the pump stops</li>
+        <li>Auto-switching chart: 1 s / 50 s window while brewing, 15 s / 15 min window otherwise</li>
+        <li>Shaded brew window and 90 s recovery bands drawn behind the trace</li>
+        <li>Demo mode with synthetic machine cycles for testing without a connected machine</li>
+        <li>Home Assistant integration over the ESPHome API</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Hardware</h2>
+      <ul class="features">
+        <li>ESP32-S3 board with 480 × 320 QSPI touchscreen — tested on the <code>jc3248w535</code></li>
+        <li>AXS15231 touch controller, octal PSRAM @ 80 MHz</li>
+        <li>UART tap into the Mara X service connector (9600 baud, <em>inverted</em> logic)</li>
+      </ul>
+    </section>
+
+    <footer>
+      Source on <a href="https://github.com/elsbrock/esphome-marax">github.com/elsbrock/esphome-marax</a> · MIT licensed
+    </footer>
+  </main>
+</body>
+</html>
