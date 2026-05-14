@@ -12,6 +12,12 @@ globals:
   - id: post_brew_timer
     type: uint32_t
     initial_value: '0'
+  - id: last_uart_data_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: uart_connected
+    type: bool
+    initial_value: 'false'
 
 # Sensors for Mara X temperature data
 sensor:

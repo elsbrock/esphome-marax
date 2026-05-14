@@ -54,6 +54,102 @@ uart:
   baud_rate: 9600
   parity: NONE
   stop_bits: 1
+  # Event-driven RX: the debug trigger delivers one complete line per call
+  # whenever a '\n' arrives. Replaces a 100ms polling interval that ran the
+  # parse + blink + timeout lambdas regardless of whether any data was
+  # waiting. The bytes / timeout fields are required by ESPHome but set high
+  # so the delimiter dominates in practice.
+  debug:
+    direction: RX
+    after:
+      delimiter: "\n"
+      bytes: 256
+      timeout: 100ms
+    sequence:
+      - lambda: |-
+          if (direction != UART_DIRECTION_RX) return;
+          if (bytes.size() < 10 || bytes[0] != 'C') return;
+
+          // Parse on a stack buffer instead of building a std::vector<std::string>.
+          // Frame format: "C1.06,116,124,093,0840,1,0\n" — temps are ints, not floats.
+          char line[64];
+          size_t len = bytes.size() < sizeof(line) - 1 ? bytes.size() : sizeof(line) - 1;
+          memcpy(line, bytes.data(), len);
+          line[len] = '\0';
+
+          char ver[16];
+          int steam_i, target_i, hx_i, time_i, heat_status, pump_status;
+          int n = sscanf(line, "C%15[^,],%d,%d,%d,%d,%d,%d",
+                         ver, &steam_i, &target_i, &hx_i, &time_i,
+                         &heat_status, &pump_status);
+          if (n != 7) return;
+
+          uint32_t now = millis();
+          id(last_uart_data_ms) = now;
+          if (!id(uart_connected)) {
+            id(uart_connected) = true;
+            ESP_LOGI("marax", "UART connection restored");
+          }
+          if (id(demo_mode_enabled)) {
+            id(demo_mode_enabled) = false;
+            ESP_LOGI("marax", "Demo mode disabled - real UART data received");
+          }
+
+          // Pump edge: timer + high-res chart switch + brew shading window
+          static int last_pump_status = -1;
+          if (last_pump_status != pump_status) {
+            if (pump_status == 1 && last_pump_status == 0) {
+              start_timer();
+              id(high_res_chart) = true;
+              ESP_LOGI("marax", "Brew started - high-res mode");
+              brew_event_start(now);
+              switch_chart_resolution();
+            } else if (pump_status == 0 && last_pump_status == 1) {
+              stop_timer();
+              set_timer_neutral((lv_obj_t*)id(brew_timer));
+              ESP_LOGI("marax", "Brew stopped");
+              brew_event_stop(now);
+            }
+            last_pump_status = pump_status;
+          }
+
+          float steam = (float)steam_i;
+          float target = (float)target_i;
+          float hx = (float)hx_i;
+
+          id(steam_temp).publish_state(steam);
+          id(service_temp).publish_state(target);
+          id(hx_temp).publish_state(hx);
+
+          // add_raw_uart_data updates the temperature / heat / pump labels
+          // through the gated cache in update_temperature_displays, so we
+          // don't re-touch those widgets here.
+          add_raw_uart_data(steam, hx, target, heat_status, pump_status);
+
+          // Machine status is not covered by the temperature cache.
+          if (pump_status == 1) {
+            lv_label_set_text((lv_obj_t*)id(machine_status), "BREWING");
+            lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0x2196F3), 0);
+          } else if (heat_status == 1) {
+            lv_label_set_text((lv_obj_t*)id(machine_status), "HEATING UP");
+            lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0xFF9800), 0);
+          } else {
+            lv_label_set_text((lv_obj_t*)id(machine_status), "READY");
+            lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0x4CAF50), 0);
+          }
+
+          lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F04A2");
+          lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0x4CAF50), 0);
+
+          char vbuf[24];
+          snprintf(vbuf, sizeof(vbuf), "V%s", ver);
+          lv_label_set_text((lv_obj_t*)id(version_display), vbuf);
+          id(mara_version).publish_state(ver);
+          std::string raw(bytes.begin(), bytes.end());
+          id(mara_raw_data).publish_state(raw.c_str());
+
+          ESP_LOGD("marax", "Parsed: Steam=%d Target=%d HX=%d Heat=%d Pump=%d",
+                   steam_i, target_i, hx_i, heat_status, pump_status);
 
 psram:
   mode: octal

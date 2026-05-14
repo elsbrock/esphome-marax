@@ -124,6 +124,7 @@ void get_temp_range(float& min_temp, float& max_temp);
 bool is_high_res_mode();
 void switch_chart_resolution();
 void clear_chart_data();
+void reset_temperature_displays_cache();
 float get_averaged_temp_at_time(uint32_t target_time, uint32_t window_ms, int temp_type);
 
 // Determine if system has recovered based on recent high-res data
@@ -460,71 +461,86 @@ void add_raw_uart_data(float steam, float hx, float target, int heat, int pump) 
 // call invalidates the widget regardless of whether the value differs, so the
 // previous unconditional updates were causing ~12 redraws/sec on the left panel
 // for steady-state data.
-void update_temperature_displays(float steam, float hx, float target, int heat, int pump) {
-    static int last_steam_int = -999;
-    static int last_target_int = -999;
-    static int last_hx_int = -999;
-    static int last_steam_band = -1;
-    static int last_hx_band = -1;
-    static bool target_color_set = false;
-    static int last_heat_state = -1;
-    static int last_pump_display = -1;
+//
+// Caches are at file scope (not function-local statics) so reset_temperature_
+// displays_cache() can invalidate them when something else has blanked the
+// labels (UART disconnect, demo toggle).
+static int td_last_steam_int = -999;
+static int td_last_target_int = -999;
+static int td_last_hx_int = -999;
+static int td_last_steam_band = -1;
+static int td_last_hx_band = -1;
+static bool td_target_color_set = false;
+static int td_last_heat_state = -1;
+static int td_last_pump_display = -1;
 
+void reset_temperature_displays_cache() {
+    td_last_steam_int = -999;
+    td_last_target_int = -999;
+    td_last_hx_int = -999;
+    td_last_steam_band = -1;
+    td_last_hx_band = -1;
+    td_target_color_set = false;
+    td_last_heat_state = -1;
+    td_last_pump_display = -1;
+}
+
+void update_temperature_displays(float steam, float hx, float target, int heat, int pump) {
     int steam_int = (int)lroundf(steam);
     int target_int = (int)lroundf(target);
     int hx_int = (int)lroundf(hx);
 
     char buf[16];
-    if (steam_int != last_steam_int) {
+    if (steam_int != td_last_steam_int) {
         snprintf(buf, sizeof(buf), "%d°C", steam_int);
         lv_label_set_text(&id(steam_temp_display), buf);
-        last_steam_int = steam_int;
+        td_last_steam_int = steam_int;
     }
-    if (target_int != last_target_int) {
+    if (target_int != td_last_target_int) {
         snprintf(buf, sizeof(buf), "%d°C", target_int);
         lv_label_set_text(&id(target_temp_display), buf);
-        last_target_int = target_int;
+        td_last_target_int = target_int;
     }
-    if (hx_int != last_hx_int) {
+    if (hx_int != td_last_hx_int) {
         snprintf(buf, sizeof(buf), "%d°C", hx_int);
         lv_label_set_text(&id(hx_temp_display), buf);
-        last_hx_int = hx_int;
+        td_last_hx_int = hx_int;
     }
 
     int steam_band = (steam > 115.0f) ? 2 : (steam > 90.0f ? 1 : 0);
-    if (steam_band != last_steam_band) {
+    if (steam_band != td_last_steam_band) {
         uint32_t c = (steam_band == 2) ? 0xFF5722 : (steam_band == 1 ? 0xFF9800 : 0x555555);
         lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(c), 0);
-        last_steam_band = steam_band;
+        td_last_steam_band = steam_band;
     }
 
-    if (!target_color_set) {
+    if (!td_target_color_set) {
         // Target color is constant; set once.
         lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);
-        target_color_set = true;
+        td_target_color_set = true;
     }
 
     int hx_band;
     if (hx >= 88.0f && hx <= 96.0f) hx_band = 0;
     else if ((hx >= 85.0f && hx < 88.0f) || (hx > 96.0f && hx <= 100.0f)) hx_band = 1;
     else hx_band = 2;
-    if (hx_band != last_hx_band) {
+    if (hx_band != td_last_hx_band) {
         uint32_t c = (hx_band == 0) ? 0x4CAF50 : (hx_band == 1 ? 0xFF9800 : 0xFF5722);
         lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(c), 0);
-        last_hx_band = hx_band;
+        td_last_hx_band = hx_band;
     }
 
-    if (heat != last_heat_state) {
+    if (heat != td_last_heat_state) {
         // Heating label text is constant; only seed it on the first call.
-        if (last_heat_state == -1) {
+        if (td_last_heat_state == -1) {
             lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
         }
         uint32_t c = (heat == 1) ? 0xFF5722 : 0x555555;
         lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(c), 0);
-        last_heat_state = heat;
+        td_last_heat_state = heat;
     }
 
-    if (pump != last_pump_display) {
+    if (pump != td_last_pump_display) {
         if (pump == 1) {
             lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
             lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
@@ -532,7 +548,7 @@ void update_temperature_displays(float steam, float hx, float target, int heat, 
             lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
             lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
         }
-        last_pump_display = pump;
+        td_last_pump_display = pump;
     }
 
     // Edge-triggered pump status handling (timer + high-res switch). Kept
@@ -1115,4 +1131,9 @@ void clear_chart_data() {
         lv_chart_set_all_value(temp_chart, target_series, LV_CHART_POINT_NONE);
         lv_chart_refresh(temp_chart);
     }
+
+    // Display labels are blanked externally (display_ui.yaml demo-off branch
+    // or the UART disconnect handler), so the cache must forget what was on
+    // screen — otherwise the next data tick would skip the re-render.
+    reset_temperature_displays_cache();
 }

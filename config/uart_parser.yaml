@@ -1,188 +1,42 @@
-# Test data generation and Mara X protocol parsing
+# UART housekeeping: timeout detection + "NO DATA" blink.
+# The actual parsing happens in the uart.debug.sequence trigger in the main
+# YAML, which fires once per complete line instead of polling every 100 ms.
 interval:
-  - interval: 100ms
+  - interval: 500ms
     then:
       - lambda: |-
-          // Read UART data and parse Mara X protocol
-          static std::string buffer = "";
-          static uint32_t last_data_time = 0;
-          static bool connected = false;
-          static int last_pump_status = -1;  // Track pump status changes for timer control
-          // Current time
           uint32_t now = millis();
-          
-          // Auto return to low-res is now driven by recovery window in chart logic
-          
-          uint8_t data;
-          
-          // Test data generation is now handled by demo mode toggle
-          
-          // Check for data timeout (5 seconds)
-          if (connected && (now - last_data_time) > 5000) {
-            // Connection lost - show disconnected state
-            connected = false;
-            
-            // Stop timer when connection is lost
+
+          // Timeout detection: 5s without a frame means we've lost the link.
+          if (id(uart_connected) && (now - id(last_uart_data_ms)) > 5000) {
+            id(uart_connected) = false;
             stop_timer();
-            last_pump_status = -1;  // Reset pump status tracking
-            ESP_LOGI("marax", "UART disconnected - timer stopped");
-            
-            // Update display with N/A values
+            ESP_LOGW("marax", "UART connection lost - no data for 5+ seconds");
+
+            // Blank the display values. reset_temperature_displays_cache()
+            // makes the gated cache forget what was on screen so the next
+            // data tick will re-render unconditionally.
             lv_label_set_text((lv_obj_t*)id(steam_temp_display), "--°C");
             lv_label_set_text((lv_obj_t*)id(target_temp_display), "--°C");
             lv_label_set_text((lv_obj_t*)id(hx_temp_display), "--°C");
             lv_label_set_text((lv_obj_t*)id(version_display), "--");
-            
-            // Update status indicators to inactive
             lv_label_set_text((lv_obj_t*)id(heating_status), "\U000F1A45 HEAT");
             lv_obj_set_style_text_color((lv_obj_t*)id(heating_status), lv_color_hex(0x333333), 0);
             lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1B22 PUMP");
             lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x333333), 0);
-            
-            // Update UART status to show no signal
             lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F08BF");
             lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0xFF5722), 0);
-            
-            ESP_LOGW("marax", "UART connection lost - no data for 5+ seconds");
+            reset_temperature_displays_cache();
           }
-          
-          // Blink "NO DATA" when not connected (unless demo mode is active)
-          if (!connected && !id(demo_mode_enabled) && id(machine_status) != nullptr) {
-            static uint32_t last_blink = 0;
+
+          // Blink "NO DATA" when disconnected and not in demo mode.
+          if (!id(uart_connected) && !id(demo_mode_enabled)) {
             static bool blink_state = true;
-            
-            if (now - last_blink > 500) {  // Blink every 500ms
-              if (blink_state) {
-                lv_label_set_text((lv_obj_t*)id(machine_status), "NO DATA");
-                lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0xFF5722), 0);
-              } else {
-                lv_label_set_text((lv_obj_t*)id(machine_status), "");  // Empty text to create blink effect
-              }
-              blink_state = !blink_state;
-              last_blink = now;
+            if (blink_state) {
+              lv_label_set_text((lv_obj_t*)id(machine_status), "NO DATA");
+              lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0xFF5722), 0);
+            } else {
+              lv_label_set_text((lv_obj_t*)id(machine_status), "");
             }
-          }
-          
-          while (id(marax_uart).available()) {
-            id(marax_uart).read_byte(&data);
-            buffer += (char)data;
-            
-            // Look for newline (end of message)
-            if (data == '\n') {
-              // Parse format: C1.06,116,124,093,0840,1,0
-              if (buffer.length() > 10 && buffer[0] == 'C') {
-                std::vector<std::string> parts;
-                std::string current = "";
-                
-                for (char c : buffer) {
-                  if (c == ',' || c == '\n') {
-                    parts.push_back(current);
-                    current = "";
-                  } else {
-                    current += c;
-                  }
-                }
-                
-                if (parts.size() >= 7) {
-                  // Valid data received - update connection state
-                  last_data_time = now;
-                  if (!connected) {
-                    connected = true;
-                    ESP_LOGI("marax", "UART connection restored");
-                  }
-                  
-                  // Disable demo mode when real data arrives
-                  if (id(demo_mode_enabled)) {
-                    id(demo_mode_enabled) = false;
-                    ESP_LOGI("marax", "Demo mode disabled - real UART data received");
-                  }
-                  
-                  // Parse values: version, steam_temp, target_temp, hx_temp, time, heat, pump
-                  float steam_temp_val = std::stof(parts[1]);
-                  float target_temp_val = std::stof(parts[2]);  
-                  float hx_temp_val = std::stof(parts[3]);
-                  int heat_status = std::stoi(parts[5]);
-                  int pump_status = std::stoi(parts[6]);
-                  
-                  // Timer control and automatic high-res mode based on pump status changes
-                  if (last_pump_status != pump_status) {
-                    if (pump_status == 1 && last_pump_status == 0) {
-                      // Pump started - start timer and switch to high-res mode
-                      start_timer();
-                      id(high_res_chart) = true;
-                      ESP_LOGI("marax", "Brew started - timer started, switched to high-res mode");
-                      // Track brew window for shading/recovery timing
-                      brew_event_start(millis());
-                      // Resize chart point buffer and rebuild for high-res
-                      switch_chart_resolution();
-                    } else if (pump_status == 0 && last_pump_status == 1) {
-                      // Pump stopped - stop timer and return to normal resolution after delay
-                      stop_timer();
-                      // Reset timer color to neutral on stop
-                      set_timer_neutral((lv_obj_t*)id(brew_timer));
-                      ESP_LOGI("marax", "Brew stopped - timer stopped, will return to normal resolution after recovery");
-                      // Close brew window for shading/recovery timing
-                      brew_event_stop(millis());
-                    }
-                    last_pump_status = pump_status;
-                  }
-                  
-                  // Update sensors
-                  id(steam_temp).publish_state(steam_temp_val);
-                  id(service_temp).publish_state(target_temp_val);
-                  id(hx_temp).publish_state(hx_temp_val);
-                  
-                  // PROFESSIONAL SYSTEM: Add raw UART data immediately (handles 400ms frequency)
-                  add_raw_uart_data(steam_temp_val, hx_temp_val, target_temp_val, heat_status, pump_status);
-                  
-                  // Update display labels
-                  lv_label_set_text((lv_obj_t*)id(steam_temp_display), str_sprintf("%.0f°C", steam_temp_val).c_str());
-                  lv_label_set_text((lv_obj_t*)id(target_temp_display), str_sprintf("%.0f°C", target_temp_val).c_str());
-                  lv_label_set_text((lv_obj_t*)id(hx_temp_display), str_sprintf("%.0f°C", hx_temp_val).c_str());
-                  
-                  // Update status indicators
-                  if (heat_status == 1) {
-                    lv_label_set_text((lv_obj_t*)id(heating_status), "\U000F1A45 HEAT");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(heating_status), lv_color_hex(0xFF5722), 0);
-                  } else {
-                    lv_label_set_text((lv_obj_t*)id(heating_status), "\U000F1A45 HEAT");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(heating_status), lv_color_hex(0x555555), 0);
-                  }
-                  
-                  if (pump_status == 1) {
-                    lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1402 PUMP");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x2196F3), 0);
-                  } else {
-                    lv_label_set_text((lv_obj_t*)id(pump_status), "\U000F1B22 PUMP");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(pump_status), lv_color_hex(0x555555), 0);
-                  }
-                  
-                  // Update machine status
-                  if (pump_status == 1) {
-                    lv_label_set_text((lv_obj_t*)id(machine_status), "BREWING");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0x2196F3), 0);
-                  } else if (heat_status == 1) {
-                    lv_label_set_text((lv_obj_t*)id(machine_status), "HEATING UP");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0xFF9800), 0);
-                  } else {
-                    lv_label_set_text((lv_obj_t*)id(machine_status), "READY");
-                    lv_obj_set_style_text_color((lv_obj_t*)id(machine_status), lv_color_hex(0x4CAF50), 0);
-                  }
-                  
-                  // Update UART status to connected
-                  lv_label_set_text((lv_obj_t*)id(uart_status), "\U000F04A2");
-                  lv_obj_set_style_text_color((lv_obj_t*)id(uart_status), lv_color_hex(0x4CAF50), 0);
-                  
-                  // Update version from first part (e.g., "C1.06")
-                  std::string version = parts[0].substr(1); // Remove 'C'
-                  lv_label_set_text((lv_obj_t*)id(version_display), ("V" + version).c_str());
-                  id(mara_version).publish_state(version.c_str());
-                  id(mara_raw_data).publish_state(buffer.c_str());
-                  
-                  ESP_LOGD("marax", "Parsed: Steam=%.0f Target=%.0f HX=%.0f Heat=%d Pump=%d", 
-                           steam_temp_val, target_temp_val, hx_temp_val, heat_status, pump_status);
-                }
-              }
-              buffer = "";
-            }
+            blink_state = !blink_state;
           }
