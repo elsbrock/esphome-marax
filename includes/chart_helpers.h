@@ -122,7 +122,7 @@ void process_chart_data();  // Convert raw data to chart resolution
 void update_chart_display();
 void get_temp_range(float& min_temp, float& max_temp);
 bool is_high_res_mode();
-void recreate_temp_chart(lv_obj_t* parent);
+void switch_chart_resolution();
 void clear_chart_data();
 float get_averaged_temp_at_time(uint32_t target_time, uint32_t window_ms, int temp_type);
 
@@ -547,7 +547,7 @@ void update_temperature_displays(float steam, float hx, float target, int heat, 
             ESP_LOGI("brew", "Brew started - timer started, switched to high-res mode");
             // Track brew window for shading
             brew_event_start(millis());
-            recreate_temp_chart(&id(graph_area));
+            switch_chart_resolution();
         } else if (pump == 0 && last_pump_status == 1) {
             // Pump stopped - stop timer and schedule return to normal resolution
             stop_timer();
@@ -671,7 +671,7 @@ void update_chart_display() {
             brew_event_recovered(millis());
             id(high_res_chart) = false;
             ESP_LOGI("chart", "Auto-switching back to low-res (recovered)");
-            recreate_temp_chart(&id(graph_area));
+            switch_chart_resolution();
             return; // Avoid further work in this update cycle after mode change
         }
     }
@@ -1062,27 +1062,13 @@ void create_temp_chart(lv_obj_t* parent) {
     // No need to reset indices - data persists across resolution switches
 }
 
-// Recreate chart with updated labels for resolution change
-void recreate_temp_chart(lv_obj_t* parent) {
-    // Clear existing chart and data
-    if (temp_chart != nullptr) {
-        lv_obj_del(temp_chart);
-        temp_chart = nullptr;
-        steam_series = nullptr;
-        hx_series = nullptr; 
-        target_series = nullptr;
-    }
-    
-    // Clear all child objects (labels) from parent
-    lv_obj_clean(parent);
-    
-    // Recreate chart with current resolution settings
-    create_temp_chart(parent);
-    
-    // Update point count for current resolution
+// Switch the chart between high-res and low-res without tearing it down.
+// Tick labels are computed dynamically in chart_tick_label_cb from
+// is_high_res_mode(), so a full rebuild is unnecessary — just resize the
+// point buffer and re-fill it from the appropriate data source.
+void switch_chart_resolution() {
+    if (temp_chart == nullptr) return;
     update_chart_point_count();
-    
-    // Rebuild with existing data
     update_temp_chart();
 }
 

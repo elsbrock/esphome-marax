@@ -265,5 +265,7 @@ lvgl:
                   format: "Chart resolution toggled: %s"
                   args: ['id(high_res_chart) ? "1s" : "15s"']
               - lambda: |-
-                  // Force chart recreation with new labels
-                  recreate_temp_chart(id(graph_area));
+                  // Tick labels and shading reformat themselves via the draw
+                  // callbacks, so just resize and refresh — no need to rebuild
+                  // the LVGL chart object.
+                  switch_chart_resolution();

@@ -113,8 +113,8 @@ interval:
                       ESP_LOGI("marax", "Brew started - timer started, switched to high-res mode");
                       // Track brew window for shading/recovery timing
                       brew_event_start(millis());
-                      // Force chart recreation with new resolution
-                      recreate_temp_chart(&id(graph_area));
+                      // Resize chart point buffer and rebuild for high-res
+                      switch_chart_resolution();
                     } else if (pump_status == 0 && last_pump_status == 1) {
                       // Pump stopped - stop timer and return to normal resolution after delay
                       stop_timer();
