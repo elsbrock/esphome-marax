@@ -1,78 +1,51 @@
 # ESPHome Mara X Display
 
-A professional temperature monitoring display for the Lelit Mara X espresso machine, built with ESP32-S3 and 3.5" touchscreen displays.
+Temperature, brew timer and recovery-shaded charts for the Lelit Mara X
+espresso machine, running on an ESP32-S3 with a 3.5" QSPI touchscreen and
+built on ESPHome + LVGL.
+
+> Not affiliated with or endorsed by Lelit. Hobby project, MIT-licensed,
+> use at your own risk — especially when wiring into the machine's UART.
 
 ## Features
 
-- **Real-time temperature monitoring** with interactive charts
-- **Professional LVGL interface** with smooth animations and touch controls
-- **Multi-series temperature charts** (Steam, HX, Target temperatures)
-- **Dual resolution modes** — 1s (50s window) and 15s (15m window)
-- **Automatic mode switching** — high‑res on brew start; low‑res after adaptive recovery
-- **Context shading** — brew window and 90s recovery highlighted subtly
-- **Interactive demo mode** - tap UART icon to enable test data simulation
-- **Precision shot timer** — 100ms resolution (MM:SS.D), value persists after stop
-- **Smart connectivity** - seamless switching between demo and live data
-- **Touch-friendly interface** optimized for espresso workflow
-- **Material Design icons** with dynamic status colors
+- Live steam / HX / target temperature readout with brew status
+- Dual-resolution chart: 1 s sampling / 50 s window when brewing, 15 s / 15 min otherwise
+- Auto-switch to high-res on brew start, back to low-res after adaptive recovery
+- Shaded context bands on the chart: brew window (blue), recovery (green, 90 s)
+- Shot timer at 100 ms precision (MM:SS.D), value persists after the pump stops
+- Demo mode with simulated machine cycles when no UART is connected
+- Touch controls to toggle resolution and demo mode
 
 ## Supported Devices
 
-| Display Model | Status | Configuration File |
-|---------------|--------|--------------------|
-| jc3248w535 | ✅ Tested | `jc3248w535-marax.yaml` |
+| Display Model | Status     | Configuration File         |
+|---------------|------------|----------------------------|
+| jc3248w535    | ✅ Tested   | `jc3248w535-marax.yaml`    |
 
 ### Hardware Requirements
 
 - ESP32-S3 development board (tested with ESP32-S3-DevKitC-1)
-- 3.5" touchscreen display (480x320 QSPI) - see supported models above
-- Touch controller: AXS15231 
-- UART connection to Lelit Mara X machine
+- 3.5" touchscreen display (480×320 QSPI) — see supported models above
+- Touch controller: AXS15231
+- UART connection to a Lelit Mara X
 
 ### Pin Configuration
 
-| Function | ESP32-S3 Pin |
-|----------|--------------|
-| Display CLK | GPIO47 |
-| Display Data | GPIO21, 48, 40, 39 |
-| Display CS | GPIO45 |
-| Display Backlight | GPIO1 |
-| Touch SDA | GPIO4 |
-| Touch SCL | GPIO8 |
-| UART TX | GPIO43 |
-| UART RX | GPIO44 |
+| Function          | ESP32-S3 Pin           |
+|-------------------|------------------------|
+| Display CLK       | GPIO47                 |
+| Display Data      | GPIO21, 48, 40, 39     |
+| Display CS        | GPIO45                 |
+| Display Backlight | GPIO1                  |
+| Touch SDA         | GPIO4                  |
+| Touch SCL         | GPIO8                  |
+| UART TX           | GPIO43                 |
+| UART RX           | GPIO44                 |
 
 ## Quick Start
 
-### Option 1: Pre-built Firmware (Recommended)
-
-1. **Download firmware** from the [latest release](https://github.com/elsbrock/esphome-marax/releases)
-   - Download `jc3248w535-marax-esp32s3.factory.bin` for complete installation
-
-2. **Flash using ESPHome Web** (Chrome/Edge required):
-   - Connect ESP32-S3 via USB to your computer
-   - Open [ESPHome Web](https://web.esphome.io/) in Chrome or Edge
-   - Click "Connect" and select your ESP32 device from the popup
-   - Click "Install" and select the downloaded `.factory.bin` file
-   - **Optional**: Change the device name from `jc3248w535-marax` to something friendlier like `Mara X Display`
-   - Wait for flashing to complete
-
-3. **Configure WiFi** via the captive portal that appears on first boot:
-   - Look for WiFi network named `Marax-Display Fallback Hotspot`
-   - Connect using password: `12345678`
-   - Follow the setup wizard to configure your home WiFi
-
-### Future Updates (OTA)
-
-Once your device is connected to WiFi, you can update firmware over-the-air:
-
-- **ESPHome Dashboard**: Add the device and click "Install Wirelessly"
-- **Web Updates**: Use the `.ota.bin` file for wireless updates via ESPHome Web
-- **Home Assistant**: Updates can be managed through the ESPHome integration
-
-### Option 2: Build from Source
-
-1. **Clone the repository:**
+1. **Clone:**
    ```bash
    git clone https://github.com/elsbrock/esphome-marax.git
    cd esphome-marax
@@ -81,140 +54,146 @@ Once your device is connected to WiFi, you can update firmware over-the-air:
 2. **Configure secrets:**
    ```bash
    cp secrets.yaml.example secrets.yaml
-   # Edit secrets.yaml with your WiFi credentials and API keys
+   # Fill in wifi_ssid, wifi_password, api_encryption_key,
+   # ota_password and ap_password.
    ```
 
-3. **Flash to ESP32:**
+3. **Flash:**
    ```bash
    esphome run jc3248w535-marax.yaml
    ```
 
+If the device can't join your WiFi after flashing, it falls back to a
+captive portal on the `Marax-Display Fallback Hotspot` SSID using
+`ap_password` from your `secrets.yaml`.
+
+Subsequent updates can be sent over the air via the ESPHome dashboard or
+Home Assistant.
+
 ## Configuration Structure
 
-The project uses a modular configuration approach for maintainability:
-
 ```
-jc3248w535-marax.yaml      # Main hardware configuration
+jc3248w535-marax.yaml      # Main hardware config + UART debug parser
 config/
-├── display_ui.yaml         # LVGL interface components  
-├── fonts.yaml             # Font definitions and icons
-├── sensors.yaml           # Temperature sensor setup
-└── uart_parser.yaml       # Mara X protocol parsing
+├── display_ui.yaml         # LVGL pages and widgets
+├── fonts.yaml              # Fonts and Material Design icon glyphs
+├── sensors.yaml            # Templates, globals, time, wifi info
+└── uart_parser.yaml        # UART timeout + "NO DATA" blink (housekeeping)
 includes/
-├── chart_helpers.h        # Chart data, logic, rendering
-└── chart_draw.h           # Draw callbacks (axis labels, shaded bands)
+├── chart_helpers.h         # Chart data buffers, averaging, render path
+├── chart_draw.h            # Tick-label and shading event callbacks
+└── timer_helpers.h         # Shot timer formatting and flashing
 ```
 
 ## Mara X Protocol
 
-The display communicates with the Mara X via UART at 9600 baud using **inverted serial logic**. The protocol format is:
+The display reads UART at 9600 baud using **inverted serial logic** (this
+matters — the Mara X's serial line is inverted relative to standard TTL).
+Frames look like:
 
 ```
 C1.06,116,124,093,0840,1,0\n
 ```
 
-Where:
-- `C1.06` - Firmware version
-- `116` - Steam temperature (°C)
-- `124` - Target temperature (°C)  
-- `093` - HX temperature (°C)
-- `0840` - Timer/timestamp
-- `1` - Heat element status (0/1)
-- `0` - Pump status (0/1)
+| Field    | Meaning                       |
+|----------|-------------------------------|
+| `C1.06`  | Firmware version              |
+| `116`    | Steam temperature (°C)        |
+| `124`    | Target temperature (°C)       |
+| `093`    | HX temperature (°C)           |
+| `0840`   | Timer/timestamp (unused here) |
+| `1`      | Heating element on/off        |
+| `0`      | Pump on/off                   |
 
 ## Display Interface
 
-### Main Screen Layout
+### Layout
 
-- **Top Bar**: Device title, machine status, time, UART signal, WiFi status
-- **Left Panel**: Shot timer, temperature readings (Steam, Target, HX), version, system status (Heat, Pump)
-- **Right Area**: Interactive real-time temperature chart with configurable history
+- **Top bar:** title, machine status, time, UART signal, WiFi status
+- **Left panel:** shot timer, temperature readings (Steam / Target / HX), version, heat + pump indicators
+- **Right area:** live temperature chart with shaded brew/recovery bands
 
-### Interactive Temperature Chart
+### Chart
 
-- **Red line**: Steam temperature
-- **Blue line**: HX/Brew temperature  
-- **Green line**: Target temperature
-- **Grid**: Subtle dotted lines for easy reading
-- **Dynamic time scale**: 15-minute history (15s) or 50-second history (1s)
-- **Touch control**: Tap chart area to toggle between 1s/15s
-- **Shaded context**: Brew window (blue) and recovery (green, 90s) bands
-- **Auto-switching**: High‑res on pump start; back to low‑res after adaptive recovery
-- **No gaps**: Switching resolution backfills high‑res from raw data (no left gap)
+- Red line: steam temperature
+- Blue line: HX/brew temperature
+- Green line: target temperature
+- Dotted grid; tick labels formatted by a chart draw-event callback
+- Time scale: 50 s window in high-res, 15 min window in low-res
+- Shaded brew window (blue) and recovery (green, 90 s) bands behind the series
+- Auto-switches to high-res on pump start; reverts to low-res once recovery is detected
+- Resolution change backfills high-res buffer from the raw data ring, so there's no left-edge gap
 
 ### Touch Controls
 
-- **Tap UART icon**: Toggle demo mode (shows animated test data)
-- **Tap chart area**: Switch between 1-second and 15-second resolution
-- **Demo mode**: Automatically disables when real UART data is received
+- **Right edge, mid-screen (~y = 100–180):** toggle demo mode (a hidden hit-strip; the UART icon up top is not the target)
+- **Chart area:** switch between 1 s and 15 s resolution
+- Demo mode auto-disables as soon as a real UART frame arrives
 
 ## Development
 
-### Building from Source
+### Requirements
 
-Requirements:
-- [ESPHome](https://esphome.io/) 2025.4.2 or later (earlier versions untested)
-- Platform: ESP32-S3 with ESP-IDF framework
+- A recent ESPHome (built and tested on 2026.2.x; needs `uart.debug.sequence` which has been available for years)
+- ESP-IDF framework (selected via the YAML)
 
-### Data Modes
+### Modes
 
-**Demo Mode** (tap UART icon to enable):
-- Animated test data simulation
-- Running shot timer with 100ms precision
-- Realistic temperature patterns and machine cycles  
-- Startup warmup ~60s, main heat-up ~5 minutes to ready
-- Brews restart after adaptive recovery completes (+ small buffer)
-- Automatically disables when real UART data is received
+**Demo mode** — synthetic data with a small state machine:
 
-**No Data Mode** (when no UART connection):
-- Blinking "NO DATA" status indicator
-- Temperature readings show "--°C"
-- System automatically switches to live data when Mara X connects
+- ~60 s cold start-up
+- ~5 min ramp to operating temperature
+- READY at operating temperature, then a brew cycle every ~30 s after recovery
+- Auto-disables when real UART data arrives
 
-### Architecture
+**No-data mode** — when the UART has gone quiet for 5 s:
 
-- **Hardware abstraction**: Clean separation between display and UART logic
-- **Modular design**: Each component in its own configuration file
-- **LVGL integration**: Professional graphics with hardware acceleration
-- **Real-time updates**: Efficient data flow from UART to display
+- Blinking "NO DATA" status
+- Temperature readouts show `--°C`
+- Resumes automatically when the Mara X reconnects
 
-## Contributing
+### Architecture notes
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- UART parsing is event-driven via `uart.debug.sequence` with a `\n` delimiter — no 10 Hz polling loop
+- `update_temperature_displays` caches the last rendered integer value and color band per widget, so labels and styles only get re-applied when something actually changed (otherwise every LVGL setter would invalidate the widget on every 400 ms frame)
+- Chart shading and tick labels are drawn from `LV_EVENT_DRAW_PART_END` / `LV_EVENT_DRAW_PART_BEGIN` callbacks; each is scoped to just the part it cares about
+- LVGL draw buffer is sized to fit in internal SRAM rather than PSRAM (faster pixel pushes)
 
 ## Troubleshooting
 
-### No UART Data
-- Verify UART connections (TX/RX pins)
-- Check that `inverted: true` is set on UART pins (Mara X uses inverted logic)
-- Monitor logs for connection status
+### No UART data
 
-### Display Issues
-- Ensure PSRAM is enabled and configured for octal mode
-- Verify SPI pin connections for display
-- Check touch controller I2C connections
+- Verify TX/RX wiring
+- Confirm `inverted: true` is set on the UART pins — the Mara X's line is not standard TTL polarity
+- Watch `marax` log lines; the parser logs each parsed frame at debug level
 
-### Performance
-- LVGL charts are optimized for smooth updates
-- Low‑res: 15-second data intervals; High‑res: 1-second
-- Y-axis auto-scales every update with padding to prevent clipping
-- Axis labels formatted via draw events; shaded bands drawn efficiently
+### Display issues
+
+- PSRAM must be enabled and configured for octal mode (see `psram:` block in main YAML)
+- Check QSPI pin wiring against the table above
+- Touch I²C: SDA on GPIO4, SCL on GPIO8
+
+### Chart updates feel sluggish
+
+The render path is gated in several places — if you're modifying it, watch for:
+
+- The Y-axis range applies 2 °C hysteresis before rescaling, so small jitter is absorbed
+- `get_averaged_temp_at_time` walks the raw buffer backward and stops at the first out-of-window sample (O(k), not O(n))
+- Label setters in `update_temperature_displays` are no-ops when the integer reading and color band haven't changed
+- The chart is not torn down on brew start / resolution toggle; just the point buffer is resized and the data is refilled
+
+## Contributing
+
+PRs welcome. Keep changes minimal and conventional-commit-style; a short
+description of the why (especially for perf-sensitive code) is more
+valuable than a wall of restated diff.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-- [ESPHome](https://esphome.io/) team for the excellent framework
+- [ESPHome](https://esphome.io/) for the framework
 - [LVGL](https://lvgl.io/) for the graphics library
-- Lelit for creating an espresso machine worth monitoring
-- Coffee enthusiasts everywhere who appreciate good data visualization
-
----
-
-*Built with precision for the perfect espresso shot.*
+- Lelit, for an espresso machine worth monitoring
