@@ -1,3 +1,9 @@
+# Forces LV_USE_CHART=1 in the generated lv_conf.h. ESPHome's lvgl component
+# has no `chart:` YAML widget (as of 2026.4), so its codegen wouldn't enable
+# the chart code path otherwise — and we build the chart imperatively in
+# includes/chart_helpers.h. See custom_components/lvgl_chart_enable/.
+lvgl_chart_enable:
+
 esphome:
   name: jc3248w535-marax
   friendly_name: "jc3248w535 Mara X Display"

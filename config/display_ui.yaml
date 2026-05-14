@@ -19,21 +19,6 @@ lvgl:
     - id: main_page
       bg_color: 0x000000  # Pure black background
       widgets:
-        # 1x1 invisible chart whose only job is to make ESPHome emit
-        # `#define LV_USE_CHART 1` in the generated lv_conf.h. Our real chart
-        # is built imperatively in chart_helpers.h; without this stub ESPHome
-        # would emit LV_USE_CHART 0 and every chart symbol in our code
-        # (lv_chart_create, lv_chart_set_next_value, ...) becomes undeclared,
-        # even with -DLV_USE_CHART=1 on the command line — the generated
-        # lv_conf.h's #define wins over compiler -D flags.
-        - chart:
-            x: 0
-            y: 0
-            width: 1
-            height: 1
-            type: LINE
-            series:
-              - color: 0x000000
         # Top labels (no header bar)
         - label:
             align: TOP_LEFT
