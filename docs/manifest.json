@@ -1,6 +1,6 @@
 {
   "name": "Mara X Display",
-  "version": "dev",
+  "version": "latest",
   "home_assistant_domain": "esphome",
   "funding_url": "https://github.com/sponsors/elsbrock",
   "new_install_skip_erase": false,
@@ -10,7 +10,7 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "jc3248w535-marax-esp32s3.factory.bin",
+          "path": "https://github.com/elsbrock/esphome-marax/releases/latest/download/jc3248w535-marax.factory.bin",
           "offset": 0
         }
       ]
