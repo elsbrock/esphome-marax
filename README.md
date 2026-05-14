@@ -133,6 +133,41 @@ C1.06,116,124,093,0840,1,0\n
 | `1`      | Heating element on/off        |
 | `0`      | Pump on/off                   |
 
+## Home Assistant
+
+The device is built on ESPHome's API, so once it shows up under the
+ESPHome integration in Home Assistant you get the following entities
+out of the box:
+
+| Entity | Unit | What it is |
+|---|---|---|
+| `sensor.steam_temperature` | °C | Steam boiler actual temperature |
+| `sensor.service_temperature` | °C | Steam boiler setpoint (firmware-configured target) |
+| `sensor.hx_temperature` | °C | Brew group (heat exchanger) temperature |
+| `text_sensor.mara_x_version` | — | Firmware version reported by the machine |
+| `text_sensor.mara_x_raw_data` | — | Last raw UART frame, useful for debugging |
+
+Enough to drive simple automations — e.g. a phone notification when
+the brew group reaches operating temperature:
+
+```yaml
+automation:
+  - alias: "Mara X ready"
+    trigger:
+      platform: numeric_state
+      entity_id: sensor.hx_temperature
+      above: 88
+      for: "00:00:30"   # avoid bouncing if HX dips below briefly
+    action:
+      service: notify.mobile_app_your_phone
+      data:
+        title: "☕ Mara X"
+        message: "Brew group is up to temperature."
+```
+
+The UART link is read-only — the firmware does not (and cannot) send
+commands back to the machine.
+
 ## Display Interface
 
 ### Layout
