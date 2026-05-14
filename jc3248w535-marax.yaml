@@ -197,14 +197,16 @@ touchscreen:
         args: [touch.x, touch.y]
 
 # QSPI Display configuration for AXS15231 with LVGL.
-# Note: rotation must be set in the lvgl: block (see config/display_ui.yaml),
-# not here — ESPHome 2026.4+ rejects `rotation:` on a display that is owned
-# by LVGL.
+# Note: rotation stays on the display block (not lvgl:) because we pin to
+# ESPHome 2026.2.x in CI (.github/workflows/build.yml), and the `rotation:`
+# key under lvgl: was added in a later release. ESPHome 2026.4+ flips this
+# the other way around — we'll move it when we port to LVGL 9.
 display:
   - platform: qspi_dbi
     id: main_display
     model: JC4832W535
     data_rate: 40MHz
+    rotation: 90
     dimensions:
       height: 480
       width: 320
