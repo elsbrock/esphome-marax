@@ -8,16 +8,9 @@ esphome:
       # Treat warnings as errors so lint regressions break the build.
       - -Wunused
       - -Werror
-      # Force-enable LV_USE_CHART. ESPHome generates lv_conf.h based on
-      # widgets it can see in the YAML; our chart is built imperatively in
-      # on_boot, so ESPHome emits `#define LV_USE_CHART 0`. The -U/-D pair
-      # undefines that and re-enables the chart widget without tripping
-      # -Werror's "macro redefined" check. The no-space form matters here:
-      # YAML serialises each entry as one shell arg, and "-U LV_USE_CHART"
-      # would reach gcc as a single token where the leading space makes
-      # the macro identifier invalid.
-      - -ULV_USE_CHART
-      - -DLV_USE_CHART=1
+      # LV_USE_CHART is enabled via the 1x1 stub chart in config/display_ui.yaml
+      # (ESPHome's generated lv_conf.h is the only thing that wins over its
+      # own LV_USE_* defaults — command-line -D doesn't override the file).
   includes:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
