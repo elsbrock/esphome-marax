@@ -11,6 +11,13 @@ esphome:
       # Note: do not set -D LV_USE_CHART=1 here — ESPHome 2026.4+ auto-enables
       # it when a chart widget is referenced in the LVGL config, so an
       # explicit define produces a "macro redefined" error under -Werror.
+    # Pin LVGL to 8.4 — our chart helpers (chart_helpers.h, chart_draw.h) use
+    # the v8 chart API. LVGL 9 ships under a new symbol set and would
+    # require a non-trivial port. Without this pin, fresh CI builds resolve
+    # to LVGL 9 via ESP-IDF managed_components and the build fails on every
+    # chart symbol; cached local builds happily keep their 8.4 lib_deps copy.
+    lib_deps:
+      - lvgl/lvgl@8.4.0
   includes:
     - includes/chart_helpers.h
     - includes/timer_helpers.h
