@@ -455,49 +455,89 @@ void add_raw_uart_data(float steam, float hx, float target, int heat, int pump) 
 }
 
 // IMMEDIATE UI FEEDBACK - Always responsive
+// Each LVGL setter is gated on a cached value so we only touch the widget when
+// the displayed value or color band actually changed. Every set_text / set_style
+// call invalidates the widget regardless of whether the value differs, so the
+// previous unconditional updates were causing ~12 redraws/sec on the left panel
+// for steady-state data.
 void update_temperature_displays(float steam, float hx, float target, int heat, int pump) {
-    // Update temperature displays immediately
-    lv_label_set_text(&id(steam_temp_display), str_sprintf("%.0f°C", steam).c_str());
-    lv_label_set_text(&id(target_temp_display), str_sprintf("%.0f°C", target).c_str());
-    lv_label_set_text(&id(hx_temp_display), str_sprintf("%.0f°C", hx).c_str());
-    
-    // Update temperature colors
-    if (steam > 115) {
-        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF5722), 0);  // Red
-    } else if (steam > 90) {
-        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
-    } else {
-        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(0x555555), 0);  // Gray
+    static int last_steam_int = -999;
+    static int last_target_int = -999;
+    static int last_hx_int = -999;
+    static int last_steam_band = -1;
+    static int last_hx_band = -1;
+    static bool target_color_set = false;
+    static int last_heat_state = -1;
+    static int last_pump_display = -1;
+
+    int steam_int = (int)lroundf(steam);
+    int target_int = (int)lroundf(target);
+    int hx_int = (int)lroundf(hx);
+
+    char buf[16];
+    if (steam_int != last_steam_int) {
+        snprintf(buf, sizeof(buf), "%d°C", steam_int);
+        lv_label_set_text(&id(steam_temp_display), buf);
+        last_steam_int = steam_int;
     }
-    
-    lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
-    
-    if (hx >= 88 && hx <= 96) {
-        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0x4CAF50), 0);  // Green
-    } else if ((hx >= 85 && hx < 88) || (hx > 96 && hx <= 100)) {
-        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF9800), 0);  // Yellow
-    } else {
-        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(0xFF5722), 0);  // Red
+    if (target_int != last_target_int) {
+        snprintf(buf, sizeof(buf), "%d°C", target_int);
+        lv_label_set_text(&id(target_temp_display), buf);
+        last_target_int = target_int;
     }
-            
-    // Update status indicators
-    if (heat == 1) {
-        lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
-        lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0xFF5722), 0);
-    } else {
-        lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
-        lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(0x555555), 0);
+    if (hx_int != last_hx_int) {
+        snprintf(buf, sizeof(buf), "%d°C", hx_int);
+        lv_label_set_text(&id(hx_temp_display), buf);
+        last_hx_int = hx_int;
     }
-    
-    if (pump == 1) {
-        lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
-        lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
-    } else {
-        lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
-        lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
+
+    int steam_band = (steam > 115.0f) ? 2 : (steam > 90.0f ? 1 : 0);
+    if (steam_band != last_steam_band) {
+        uint32_t c = (steam_band == 2) ? 0xFF5722 : (steam_band == 1 ? 0xFF9800 : 0x555555);
+        lv_obj_set_style_text_color(&id(steam_temp_display), lv_color_hex(c), 0);
+        last_steam_band = steam_band;
     }
-    
-    // Timer control and automatic high-res mode
+
+    if (!target_color_set) {
+        // Target color is constant; set once.
+        lv_obj_set_style_text_color(&id(target_temp_display), lv_color_hex(0x4CAF50), 0);
+        target_color_set = true;
+    }
+
+    int hx_band;
+    if (hx >= 88.0f && hx <= 96.0f) hx_band = 0;
+    else if ((hx >= 85.0f && hx < 88.0f) || (hx > 96.0f && hx <= 100.0f)) hx_band = 1;
+    else hx_band = 2;
+    if (hx_band != last_hx_band) {
+        uint32_t c = (hx_band == 0) ? 0x4CAF50 : (hx_band == 1 ? 0xFF9800 : 0xFF5722);
+        lv_obj_set_style_text_color(&id(hx_temp_display), lv_color_hex(c), 0);
+        last_hx_band = hx_band;
+    }
+
+    if (heat != last_heat_state) {
+        // Heating label text is constant; only seed it on the first call.
+        if (last_heat_state == -1) {
+            lv_label_set_text(&id(heating_status), "\U000F1A45 HEAT");
+        }
+        uint32_t c = (heat == 1) ? 0xFF5722 : 0x555555;
+        lv_obj_set_style_text_color(&id(heating_status), lv_color_hex(c), 0);
+        last_heat_state = heat;
+    }
+
+    if (pump != last_pump_display) {
+        if (pump == 1) {
+            lv_label_set_text(&id(pump_status), "\U000F1402 PUMP");
+            lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x2196F3), 0);
+        } else {
+            lv_label_set_text(&id(pump_status), "\U000F1B22 PUMP");
+            lv_obj_set_style_text_color(&id(pump_status), lv_color_hex(0x555555), 0);
+        }
+        last_pump_display = pump;
+    }
+
+    // Edge-triggered pump status handling (timer + high-res switch). Kept
+    // separate from the display cache above because it must observe the same
+    // edge exactly once even if the display cache is reset.
     static int last_pump_status = -1;
     if (last_pump_status != pump) {
         if (pump == 1 && last_pump_status == 0) {
@@ -651,13 +691,30 @@ void update_chart_display() {
     lv_chart_set_next_value(temp_chart, steam_series, (int32_t)steam_data[latest_idx]);
     lv_chart_set_next_value(temp_chart, hx_series, (int32_t)hx_data[latest_idx]);
     lv_chart_set_next_value(temp_chart, target_series, (int32_t)target_data[latest_idx]);
-    
-    // Update Y-axis range every update for accuracy
+
+    // Hysteresis on Y range: lv_chart_set_range always refreshes the chart
+    // internally, so calling it on every update — even when the bounds barely
+    // moved — forced a full repaint at 1 Hz. Only commit a new range when it
+    // drifts past a threshold; otherwise just refresh so the shading bands
+    // continue to slide left with time.
     float min_temp, max_temp;
     get_temp_range(min_temp, max_temp);
-    lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, (int32_t)min_temp, (int32_t)max_temp);
-    lv_chart_refresh(temp_chart);
-    ESP_LOGD("chart", "Y-range updated: %.0f-%.0f°C (mode: %s)", 
+    int32_t y_min = (int32_t)min_temp;
+    int32_t y_max = (int32_t)max_temp;
+    static int32_t last_y_min = -9999;
+    static int32_t last_y_max = -9999;
+    int32_t dmin = y_min - last_y_min; if (dmin < 0) dmin = -dmin;
+    int32_t dmax = y_max - last_y_max; if (dmax < 0) dmax = -dmax;
+    bool range_changed = (last_y_min == -9999) || dmin > 2 || dmax > 2;
+    if (range_changed) {
+        lv_chart_set_range(temp_chart, LV_CHART_AXIS_PRIMARY_Y, y_min, y_max);
+        last_y_min = y_min;
+        last_y_max = y_max;
+    } else {
+        lv_chart_refresh(temp_chart);
+    }
+    ESP_LOGD("chart", "Y-range %s: %.0f-%.0f°C (mode: %s)",
+             range_changed ? "updated" : "stable",
              min_temp, max_temp, high_res ? "1s" : "15s");
 }
 
@@ -996,9 +1053,10 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_set_style_text_color(y_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(y_label, &lv_font_montserrat_14, 0);
     lv_obj_set_pos(y_label, 5, 25);  // Below first Y-axis value
-    // Format axis tick labels + shaded sections via draw events
-    lv_obj_add_event_cb(temp_chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_BEGIN, nullptr);
-    lv_obj_add_event_cb(temp_chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_END, nullptr);
+    // Axis tick labels on BEGIN; shading overlay on END. Each handler is
+    // narrowly scoped so it only does work for its own draw part.
+    lv_obj_add_event_cb(temp_chart, chart_tick_label_cb, LV_EVENT_DRAW_PART_BEGIN, nullptr);
+    lv_obj_add_event_cb(temp_chart, chart_shading_cb, LV_EVENT_DRAW_PART_END, nullptr);
 
     // Chart will be populated by existing data when resolution changes
     // No need to reset indices - data persists across resolution switches
