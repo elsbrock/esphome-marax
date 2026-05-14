@@ -4,6 +4,10 @@ lvgl:
     - main_display
   touchscreens:
     - main_touchscreen
+  # Display panel is mounted in portrait but the UI renders in landscape;
+  # LVGL owns the rotation transform (ESPHome 2026.4+ rejects `rotation:`
+  # on a display that's bound to LVGL).
+  rotation: 90
   # Keep the draw buffer in internal SRAM (>25% always goes to PSRAM). 12% of a
   # 480x320 RGB565 framebuffer is ~36 KB which fits comfortably in S3 SRAM and
   # is ~4-8x faster to push pixels through than PSRAM.

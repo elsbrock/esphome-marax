@@ -194,13 +194,15 @@ touchscreen:
         format: "Touch at (%d, %d)"
         args: [touch.x, touch.y]
 
-# QSPI Display configuration for AXS15231 with LVGL
+# QSPI Display configuration for AXS15231 with LVGL.
+# Note: rotation must be set in the lvgl: block (see config/display_ui.yaml),
+# not here — ESPHome 2026.4+ rejects `rotation:` on a display that is owned
+# by LVGL.
 display:
   - platform: qspi_dbi
     id: main_display
     model: JC4832W535
     data_rate: 40MHz
-    rotation: 90
     dimensions:
       height: 480
       width: 320
