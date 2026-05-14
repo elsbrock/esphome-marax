@@ -101,24 +101,27 @@ static void chart_shading_cb(lv_event_t* e) {
 }
 
 // Custom-drawn X/Y axis tick labels. Replaces v8's per-part LV_PART_TICKS
-// callback (and the lv_chart_set_axis_tick configuration that fed it).
+// path (and lv_chart_set_axis_tick, both removed in v9). Registered on the
+// chart's *parent*, not on the chart itself, so it can draw to the left of
+// and below the chart — drawing from the chart's own event would be clipped
+// to the chart's outer bounds.
 // 6 X-axis labels (-50s..0s in high-res mode, or -15m..0m in low-res),
 // 5 Y-axis labels stepped between the chart's current Y range.
 static void chart_tick_label_cb(lv_event_t* e) {
+    if (!temp_chart) return;
     lv_layer_t* layer = lv_event_get_layer(e);
     if (!layer) return;
-    lv_obj_t* obj = lv_event_get_target_obj(e);
-    if (!obj) return;
 
-    lv_area_t content;
-    lv_obj_get_content_coords(obj, &content);
-    int32_t plot_left = content.x1;
-    int32_t plot_top = content.y1;
-    int32_t plot_right = content.x2;
-    int32_t plot_bottom = content.y2;
-    int32_t plot_w = plot_right - plot_left;
-    int32_t plot_h = plot_bottom - plot_top;
-    if (plot_w <= 0 || plot_h <= 0) return;
+    // Chart's absolute screen-space outer bounds.
+    lv_area_t chart_area;
+    lv_obj_get_coords(temp_chart, &chart_area);
+    int32_t chart_left = chart_area.x1;
+    int32_t chart_top = chart_area.y1;
+    int32_t chart_right = chart_area.x2;
+    int32_t chart_bottom = chart_area.y2;
+    int32_t chart_w = chart_right - chart_left;
+    int32_t chart_h = chart_bottom - chart_top;
+    if (chart_w <= 0 || chart_h <= 0) return;
 
     lv_draw_label_dsc_t lbl;
     lv_draw_label_dsc_init(&lbl);
@@ -127,11 +130,12 @@ static void chart_tick_label_cb(lv_event_t* e) {
 
     char text[16];
 
-    // X axis: 6 evenly spaced labels along the bottom edge.
+    // X axis: 6 labels evenly spaced along the chart's bottom edge, painted
+    // just below the chart in the parent's gutter.
     const int n_x = 6;
     bool high = is_high_res_mode();
     for (int idx = 0; idx < n_x; idx++) {
-        int32_t x_center = plot_left + idx * plot_w / (n_x - 1);
+        int32_t x_center = chart_left + idx * chart_w / (n_x - 1);
         if (high) {
             int sec = -((n_x - 1 - idx) * (HIGH_RES_WINDOW_SEC / (n_x - 1)));
             if (idx == n_x - 1) sec = 0;
@@ -144,25 +148,26 @@ static void chart_tick_label_cb(lv_event_t* e) {
         lbl.text = text;
         lv_area_t area = {
             .x1 = (int32_t)(x_center - 18),
-            .y1 = (int32_t)(plot_bottom + 2),
+            .y1 = (int32_t)(chart_bottom + 4),
             .x2 = (int32_t)(x_center + 18),
-            .y2 = (int32_t)(plot_bottom + 18),
+            .y2 = (int32_t)(chart_bottom + 20),
         };
         lv_draw_label(layer, &lbl, &area);
     }
 
-    // Y axis: 5 labels stepped from last_y_max (top) to last_y_min (bottom).
+    // Y axis: 5 labels stepped from last_y_max (top) to last_y_min (bottom),
+    // painted just to the left of the chart in the parent's gutter.
     if (last_y_max > last_y_min) {
         const int n_y = 5;
         for (int idx = 0; idx < n_y; idx++) {
             int32_t value = last_y_max - idx * (last_y_max - last_y_min) / (n_y - 1);
-            int32_t y_center = plot_top + idx * plot_h / (n_y - 1);
+            int32_t y_center = chart_top + idx * chart_h / (n_y - 1);
             lv_snprintf(text, sizeof(text), "%d", (int)value);
             lbl.text = text;
             lv_area_t area = {
-                .x1 = (int32_t)(plot_left - 28),
+                .x1 = (int32_t)(chart_left - 30),
                 .y1 = (int32_t)(y_center - 8),
-                .x2 = (int32_t)(plot_left - 4),
+                .x2 = (int32_t)(chart_left - 4),
                 .y2 = (int32_t)(y_center + 8),
             };
             lv_draw_label(layer, &lbl, &area);

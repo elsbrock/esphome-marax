@@ -1039,12 +1039,9 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_clear_flag(temp_chart, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_clear_flag(temp_chart, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
     lv_obj_clear_flag(temp_chart, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    // Padding doubles as the gutter that our custom tick label callback
-    // paints into. v8's lv_chart_set_axis_tick reserved this space via the
-    // draw_size parameter; v9 has no equivalent, so we reserve it manually.
+    // No padding — tick labels are now painted in the parent (graph_area)
+    // outside the chart's outer bounds, not in a padding gutter inside it.
     lv_obj_set_style_pad_all(temp_chart, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(temp_chart, 30, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(temp_chart, 20, LV_PART_MAIN);
     lv_obj_set_scrollbar_mode(temp_chart, LV_SCROLLBAR_MODE_OFF);
 
     // Fine-grained dynamic grid
@@ -1085,10 +1082,13 @@ void create_temp_chart(lv_obj_t* parent) {
     lv_obj_set_style_text_font(y_label, &lv_font_montserrat_14, 0);
     lv_obj_set_pos(y_label, 5, 25);  // Below first Y-axis value
 
-    // Shading paints behind the series on MAIN_BEGIN; tick labels paint on
-    // top during MAIN_END. lv_event_get_layer(e) is the v9 entry point.
+    // Shading paints behind the series on the chart's own MAIN_BEGIN.
+    // Tick labels live on the *parent* (graph_area) so they can render in
+    // the area to the left of and below the chart — the chart's draw event
+    // can only paint inside the chart's own outer bounds. POST_END on the
+    // parent fires after the chart has been drawn, so labels sit on top.
     lv_obj_add_event_cb(temp_chart, chart_shading_cb, LV_EVENT_DRAW_MAIN_BEGIN, nullptr);
-    lv_obj_add_event_cb(temp_chart, chart_tick_label_cb, LV_EVENT_DRAW_MAIN_END, nullptr);
+    lv_obj_add_event_cb(parent, chart_tick_label_cb, LV_EVENT_DRAW_POST_END, nullptr);
 
     // Chart will be populated by existing data when resolution changes
     // No need to reset indices - data persists across resolution switches
